@@ -236,4 +236,6 @@ class PreferencesHelper(val context: Context) {
     fun trustedSignatures() = flowPrefs.getStringSet("trusted_signatures", emptySet())
 
     fun steadyChapterDownload() = prefs.getBoolean(Keys.steadyChapterDownload, false)
+
+    fun enableDoh() = prefs.getBoolean(Keys.enableDoh, false)
 }
