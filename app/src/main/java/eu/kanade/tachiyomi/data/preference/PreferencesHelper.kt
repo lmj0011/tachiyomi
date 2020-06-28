@@ -121,6 +121,8 @@ class PreferencesHelper(val context: Context) {
 
     fun readWithTapping() = flowPrefs.getBoolean(Keys.readWithTapping, true)
 
+    fun readWithTappingInverted() = flowPrefs.getEnum(Keys.readWithTappingInverted, Values.TappingInvertMode.NONE)
+
     fun readWithLongTap() = flowPrefs.getBoolean(Keys.readWithLongTap, true)
 
     fun readWithVolumeKeys() = flowPrefs.getBoolean(Keys.readWithVolumeKeys, false)
@@ -130,6 +132,8 @@ class PreferencesHelper(val context: Context) {
     fun portraitColumns() = flowPrefs.getInt(Keys.portraitColumns, 0)
 
     fun landscapeColumns() = flowPrefs.getInt(Keys.landscapeColumns, 0)
+
+    fun jumpToChapters() = prefs.getBoolean(Keys.jumpToChapters, false)
 
     fun updateOnlyNonCompleted() = prefs.getBoolean(Keys.updateOnlyNonCompleted, false)
 

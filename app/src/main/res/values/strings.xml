@@ -172,6 +172,7 @@
     <string name="portrait">Portrait</string>
     <string name="landscape">Landscape</string>
     <string name="default_columns">Default</string>
+    <string name="pref_jump_to_chapters">Jump to chapters on open</string>
 
     <string name="pref_category_library_update">Updates</string>
     <string name="pref_library_update_interval">Library update frequency</string>
@@ -458,6 +459,8 @@
     <string name="description">Description</string>
     <string name="ongoing">Ongoing</string>
     <string name="unknown">Unknown</string>
+    <string name="unknown_author">Unknown author</string>
+    <string name="unknown_status">Unknown status</string>
     <string name="licensed">Licensed</string>
     <string name="add_to_library">Add to library</string>
     <string name="in_library">In library</string>
@@ -673,5 +676,10 @@
     <string name="channel_backup_restore">Backup and restore</string>
     <string name="channel_backup_restore_progress">Progress</string>
     <string name="channel_backup_restore_complete">Complete</string>
+    <string name="pref_read_with_tapping_inverted">Invert tapping</string>
+    <string name="tapping_inverted_none">None</string>
+    <string name="tapping_inverted_horizontal">Horizontal</string>
+    <string name="tapping_inverted_vertical">Vertical</string>
+    <string name="tapping_inverted_both">Both</string>
 
 </resources>
