@@ -5,6 +5,8 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup.LayoutParams
+import androidx.core.view.isGone
+import androidx.core.view.isVisible
 import androidx.viewpager.widget.ViewPager
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
@@ -14,8 +16,6 @@ import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.viewer.BaseViewer
-import eu.kanade.tachiyomi.util.view.gone
-import eu.kanade.tachiyomi.util.view.visible
 import timber.log.Timber
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -71,7 +71,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : BaseViewer {
     private val preferences: PreferencesHelper = Injekt.get()
 
     init {
-        pager.gone() // Don't layout the pager yet
+        pager.isVisible = false // Don't layout the pager yet
         pager.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         pager.offscreenPageLimit = 1
         pager.id = R.id.reader_pager
@@ -85,29 +85,38 @@ abstract class PagerViewer(val activity: ReaderActivity) : BaseViewer {
                 isIdle = state == ViewPager.SCROLL_STATE_IDLE
             }
         })
-        pager.tapListener = { event ->
+        pager.tapListener = f@{ event ->
+            if (!config.tappingEnabled) {
+                activity.toggleMenu()
+                return@f
+            }
+
+            val positionX = event.x
+            val positionY = event.y
+            val topSideTap = positionY < pager.height * 0.25f
+            val bottomSideTap = positionY > pager.height * 0.75f
+            val leftSideTap = positionX < pager.width * 0.33f
+            val rightSideTap = positionX > pager.width * 0.66f
+
             val invertMode = config.tappingInverted
+            val invertVertical = invertMode == TappingInvertMode.VERTICAL || invertMode == TappingInvertMode.BOTH
+            val invertHorizontal = invertMode == TappingInvertMode.HORIZONTAL || invertMode == TappingInvertMode.BOTH
 
             if (this is VerticalPagerViewer) {
-                val positionY = event.y
-                val tappingInverted = invertMode == TappingInvertMode.VERTICAL || invertMode == TappingInvertMode.BOTH
-                val topSideTap = positionY < pager.height * 0.33f && config.tappingEnabled
-                val bottomSideTap = positionY > pager.height * 0.66f && config.tappingEnabled
-
                 when {
-                    topSideTap && !tappingInverted || bottomSideTap && tappingInverted -> moveLeft()
-                    bottomSideTap && !tappingInverted || topSideTap && tappingInverted -> moveRight()
+                    topSideTap && !invertVertical || bottomSideTap && invertVertical -> moveLeft()
+                    bottomSideTap && !invertVertical || topSideTap && invertVertical -> moveRight()
+
+                    leftSideTap && !invertHorizontal || rightSideTap && invertHorizontal -> moveLeft()
+                    rightSideTap && !invertHorizontal || leftSideTap && invertHorizontal -> moveRight()
+
                     else -> activity.toggleMenu()
                 }
             } else {
-                val positionX = event.x
-                val tappingInverted = invertMode == TappingInvertMode.HORIZONTAL || invertMode == TappingInvertMode.BOTH
-                val leftSideTap = positionX < pager.width * 0.33f && config.tappingEnabled
-                val rightSideTap = positionX > pager.width * 0.66f && config.tappingEnabled
-
                 when {
-                    leftSideTap && !tappingInverted || rightSideTap && tappingInverted -> moveLeft()
-                    rightSideTap && !tappingInverted || leftSideTap && tappingInverted -> moveRight()
+                    leftSideTap && !invertHorizontal || rightSideTap && invertHorizontal -> moveLeft()
+                    rightSideTap && !invertHorizontal || leftSideTap && invertHorizontal -> moveRight()
+
                     else -> activity.toggleMenu()
                 }
             }
@@ -233,11 +242,11 @@ abstract class PagerViewer(val activity: ReaderActivity) : BaseViewer {
         adapter.setChapters(chapters, forceTransition)
 
         // Layout the pager once a chapter is being set
-        if (pager.visibility == View.GONE) {
+        if (pager.isGone) {
             Timber.d("Pager first layout")
             val pages = chapters.currChapter.pages ?: return
             moveToPage(pages[chapters.currChapter.requestedPage])
-            pager.visible()
+            pager.isVisible = true
         }
     }
 

@@ -8,6 +8,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.firebase.ml.vision.FirebaseVision
 import com.google.firebase.ml.vision.common.FirebaseVisionImage
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.databinding.ReaderPageSheetBinding
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.util.system.toast
@@ -22,15 +23,16 @@ class ReaderPageSheet(
     private val page: ReaderPage
 ) : BottomSheetDialog(activity) {
 
-    private val view = activity.layoutInflater.inflate(R.layout.reader_page_sheet, null)
+    private val binding = ReaderPageSheetBinding.inflate(activity.layoutInflater, null, false)
 
     init {
-        setContentView(view)
+        setContentView(binding.root)
+        
+        binding.extractTextFromPage.setOnClickListener { extractTextFromImage() }
+        binding.setAsCoverLayout.setOnClickListener { setAsCover() }
+        binding.shareLayout.setOnClickListener { share() }
+        binding.saveLayout.setOnClickListener { save() }
 
-        extract_text_from_page.setOnClickListener { extractTextFromImage() }
-        set_as_cover_layout.setOnClickListener { setAsCover() }
-        share_layout.setOnClickListener { share() }
-        save_layout.setOnClickListener { save() }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
