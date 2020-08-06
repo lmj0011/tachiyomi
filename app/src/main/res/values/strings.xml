@@ -351,6 +351,7 @@
     <string name="invalid_backup_file_missing_data">File is missing data.</string>
     <string name="invalid_backup_file_missing_manga">Backup does not contain any manga.</string>
     <string name="backup_restore_missing_sources">Missing sources:</string>
+    <string name="backup_restore_missing_trackers">Trackers not logged into:</string>
     <string name="backup_restore_content">Restore uses sources to fetch data, carrier costs may apply.\n\nMake sure you have installed all necessary extensions and are logged in to sources and tracking services before restoring.</string>
     <string name="restore_completed">Restore completed</string>
     <string name="restore_duration">%02d min, %02d sec</string>
@@ -695,5 +696,7 @@
     <string name="tapping_inverted_horizontal">Horizontal</string>
     <string name="tapping_inverted_vertical">Vertical</string>
     <string name="tapping_inverted_both">Both</string>
+    <string name="set_chapter_settings_as_default">Set as Default</string>
+    <string name="chapter_settings_apply_to_library">Apply to all in Library</string>
 
 </resources>
