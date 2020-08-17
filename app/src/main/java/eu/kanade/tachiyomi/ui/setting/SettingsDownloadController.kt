@@ -65,7 +65,7 @@ class SettingsDownloadController : SettingsController() {
             defaultValue = true
         }
         preferenceCategory {
-            titleRes = R.string.pref_remove_after_read
+            titleRes = R.string.pref_category_delete_chapters
 
             switchPreference {
                 key = Keys.removeAfterMarkedAsRead
@@ -83,6 +83,11 @@ class SettingsDownloadController : SettingsController() {
                 entryValues = arrayOf("-1", "0", "1", "2", "3", "4")
                 defaultValue = "-1"
                 summary = "%s"
+            }
+            switchPreference {
+                key = Keys.removeBookmarkedChapters
+                titleRes = R.string.pref_remove_bookmarked_chapters
+                defaultValue = false
             }
         }
 

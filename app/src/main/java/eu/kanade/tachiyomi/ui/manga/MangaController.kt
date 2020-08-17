@@ -42,6 +42,7 @@ import eu.kanade.tachiyomi.source.SourceManager
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.controller.FabController
 import eu.kanade.tachiyomi.ui.base.controller.NucleusController
+import eu.kanade.tachiyomi.ui.base.controller.ToolbarLiftOnScrollController
 import eu.kanade.tachiyomi.ui.base.controller.withFadeTransaction
 import eu.kanade.tachiyomi.ui.browse.migration.search.SearchController
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceController
@@ -85,6 +86,7 @@ import uy.kohesive.injekt.injectLazy
 
 class MangaController :
     NucleusController<MangaControllerBinding, MangaPresenter>,
+    ToolbarLiftOnScrollController,
     FabController,
     ActionMode.Callback,
     FlexibleAdapter.OnItemClickListener,
@@ -130,13 +132,14 @@ class MangaController :
     private var chaptersHeaderAdapter: MangaChaptersHeaderAdapter? = null
     private var chaptersAdapter: ChaptersAdapter? = null
 
-    /**
-     * Sheet containing filter/sort/display items.
-     */
+    // Sheet containing filter/sort/display items.
     private var settingsSheet: ChaptersSettingsSheet? = null
 
     private var actionFab: ExtendedFloatingActionButton? = null
     private var actionFabScrollListener: RecyclerView.OnScrollListener? = null
+
+    // Snackbar to add manga to library after downloading chapter(s)
+    private var addSnackbar: Snackbar? = null
 
     /**
      * Action mode for multiple selection.
@@ -316,6 +319,7 @@ class MangaController :
         chaptersHeaderAdapter = null
         chaptersAdapter = null
         settingsSheet = null
+        addSnackbar?.dismiss()
         updateToolbarTitleAlpha(255)
         super.onDestroyView(view)
     }
@@ -891,7 +895,7 @@ class MangaController :
         val manga = presenter.manga
         presenter.downloadChapters(chapters)
         if (view != null && !manga.favorite) {
-            activity!!.root_coordinator?.snack(view.context.getString(R.string.snack_add_to_library), Snackbar.LENGTH_INDEFINITE) {
+            addSnackbar = activity!!.root_coordinator?.snack(view.context.getString(R.string.snack_add_to_library), Snackbar.LENGTH_INDEFINITE) {
                 setAction(R.string.action_add) {
                     addToLibrary(manga)
                 }

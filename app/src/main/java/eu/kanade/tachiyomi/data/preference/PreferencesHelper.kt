@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.data.database.models.Manga
 import eu.kanade.tachiyomi.data.preference.PreferenceKeys as Keys
 import eu.kanade.tachiyomi.data.preference.PreferenceValues as Values
 import eu.kanade.tachiyomi.data.preference.PreferenceValues.DisplayMode
+import eu.kanade.tachiyomi.data.preference.PreferenceValues.NsfwAllowance
 import eu.kanade.tachiyomi.data.track.TrackService
 import eu.kanade.tachiyomi.data.track.anilist.Anilist
 import java.io.File
@@ -188,6 +189,8 @@ class PreferencesHelper(val context: Context) {
 
     fun removeAfterMarkedAsRead() = prefs.getBoolean(Keys.removeAfterMarkedAsRead, false)
 
+    fun removeBookmarkedChapters() = prefs.getBoolean(Keys.removeBookmarkedChapters, false)
+
     fun libraryUpdateInterval() = flowPrefs.getInt(Keys.libraryUpdateInterval, 24)
 
     fun libraryUpdateRestriction() = prefs.getStringSet(Keys.libraryUpdateRestriction, setOf("wifi"))
@@ -217,6 +220,8 @@ class PreferencesHelper(val context: Context) {
     fun librarySortingAscending() = flowPrefs.getBoolean("library_sorting_ascending", true)
 
     fun automaticExtUpdates() = flowPrefs.getBoolean(Keys.automaticExtUpdates, true)
+
+    fun allowNsfwSource() = flowPrefs.getEnum(Keys.allowNsfwSource, NsfwAllowance.ALLOWED)
 
     fun extensionUpdatesCount() = flowPrefs.getInt("ext_updates_count", 0)
 

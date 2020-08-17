@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.browse.extension
 import android.app.Application
 import android.os.Bundle
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.data.preference.PreferenceValues
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
@@ -55,20 +56,22 @@ open class ExtensionPresenter(
     private fun toItems(tuple: ExtensionTuple): List<ExtensionItem> {
         val context = Injekt.get<Application>()
         val activeLangs = preferences.enabledLanguages().get()
+        val showNsfwExtensions = preferences.allowNsfwSource().get() != PreferenceValues.NsfwAllowance.BLOCKED
 
         val (installed, untrusted, available) = tuple
 
         val items = mutableListOf<ExtensionItem>()
 
-        val updatesSorted = installed.filter { it.hasUpdate }.sortedBy { it.pkgName }
-        val installedSorted = installed.filter { !it.hasUpdate }.sortedWith(compareBy({ !it.isObsolete }, { it.pkgName }))
+        val updatesSorted = installed.filter { it.hasUpdate && (showNsfwExtensions || !it.isNsfw) }.sortedBy { it.pkgName }
+        val installedSorted = installed.filter { !it.hasUpdate && (showNsfwExtensions || !it.isNsfw) }.sortedWith(compareBy({ !it.isObsolete }, { it.pkgName }))
         val untrustedSorted = untrusted.sortedBy { it.pkgName }
         val availableSorted = available
             // Filter out already installed extensions and disabled languages
             .filter { avail ->
                 installed.none { it.pkgName == avail.pkgName } &&
                     untrusted.none { it.pkgName == avail.pkgName } &&
-                    (avail.lang in activeLangs || avail.lang == "all")
+                    (avail.lang in activeLangs || avail.lang == "all") &&
+                    (showNsfwExtensions || !avail.isNsfw)
             }
             .sortedBy { it.pkgName }
 
