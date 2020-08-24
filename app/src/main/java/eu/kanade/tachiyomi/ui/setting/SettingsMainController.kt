@@ -1,18 +1,30 @@
 package eu.kanade.tachiyomi.ui.setting
 
+import android.view.Menu
+import android.view.MenuInflater
+import androidx.appcompat.widget.SearchView
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.base.controller.withFadeTransaction
+import eu.kanade.tachiyomi.ui.setting.settingssearch.SettingsSearchController
+import eu.kanade.tachiyomi.ui.setting.settingssearch.SettingsSearchHelper
 import eu.kanade.tachiyomi.util.preference.iconRes
 import eu.kanade.tachiyomi.util.preference.iconTint
 import eu.kanade.tachiyomi.util.preference.onClick
 import eu.kanade.tachiyomi.util.preference.preference
 import eu.kanade.tachiyomi.util.preference.titleRes
 import eu.kanade.tachiyomi.util.system.getResourceColor
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import reactivecircus.flowbinding.appcompat.QueryTextEvent
+import reactivecircus.flowbinding.appcompat.queryTextEvents
 
 class SettingsMainController : SettingsController() {
 
-    override fun setupPreferenceScreen(screen: PreferenceScreen) = with(screen) {
+    override fun setupPreferenceScreen(screen: PreferenceScreen) = screen.apply {
+        SettingsSearchHelper.initPreferenceSearchResultCollection(context, preferenceManager)
+
         titleRes = R.string.label_settings
 
         val tintColor = context.getResourceColor(R.attr.colorAccent)
@@ -81,5 +93,32 @@ class SettingsMainController : SettingsController() {
 
     private fun navigateTo(controller: SettingsController) {
         router.pushController(controller.withFadeTransaction())
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
+        // Inflate menu
+        inflater.inflate(R.menu.settings_main, menu)
+
+        // Initialize search option.
+        val searchItem = menu.findItem(R.id.action_search)
+        val searchView = searchItem.actionView as SearchView
+        searchView.maxWidth = Int.MAX_VALUE
+
+        // Change hint to show global search.
+        searchView.queryHint = applicationContext?.getString(R.string.action_global_search_hint)
+
+        // Create query listener which opens the global search view.
+        searchView.queryTextEvents()
+            .filterIsInstance<QueryTextEvent.QueryChanged>()
+            .onEach {
+                performSettingsSearch(it.queryText.toString())
+            }
+            .launchIn(scope)
+    }
+
+    private fun performSettingsSearch(query: String) {
+        router.pushController(
+            SettingsSearchController(query).withFadeTransaction()
+        )
     }
 }
