@@ -7,7 +7,6 @@ import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.base.controller.withFadeTransaction
 import eu.kanade.tachiyomi.ui.setting.settingssearch.SettingsSearchController
-import eu.kanade.tachiyomi.ui.setting.settingssearch.SettingsSearchHelper
 import eu.kanade.tachiyomi.util.preference.iconRes
 import eu.kanade.tachiyomi.util.preference.iconTint
 import eu.kanade.tachiyomi.util.preference.onClick
@@ -23,8 +22,6 @@ import reactivecircus.flowbinding.appcompat.queryTextEvents
 class SettingsMainController : SettingsController() {
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) = screen.apply {
-        SettingsSearchHelper.initPreferenceSearchResultCollection(context, preferenceManager)
-
         titleRes = R.string.label_settings
 
         val tintColor = context.getResourceColor(R.attr.colorAccent)
@@ -105,7 +102,7 @@ class SettingsMainController : SettingsController() {
         searchView.maxWidth = Int.MAX_VALUE
 
         // Change hint to show global search.
-        searchView.queryHint = applicationContext?.getString(R.string.action_global_search_hint)
+        searchView.queryHint = applicationContext?.getString(R.string.action_search_settings)
 
         // Create query listener which opens the global search view.
         searchView.queryTextEvents()
