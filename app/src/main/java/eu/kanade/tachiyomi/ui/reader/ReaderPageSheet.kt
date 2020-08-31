@@ -27,12 +27,11 @@ class ReaderPageSheet(
 
     init {
         setContentView(binding.root)
-        
+
         binding.extractTextFromPage.setOnClickListener { extractTextFromImage() }
         binding.setAsCoverLayout.setOnClickListener { setAsCover() }
         binding.shareLayout.setOnClickListener { share() }
         binding.saveLayout.setOnClickListener { save() }
-
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

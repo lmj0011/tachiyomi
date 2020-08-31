@@ -92,7 +92,7 @@ class ChapterLoader(
                  * If this chapter is already downloaded then attempt to download the
                  * next chapter ahead that is not.
                  */
-                if(shouldDownload && goingToNextChapter) {
+                if (shouldDownload && goingToNextChapter) {
                     launchIO {
                         val dbChapters = db.getChapters(manga).executeAsBlocking().toMutableList()
                         dbChapters.sortBy { it.chapter_number }
