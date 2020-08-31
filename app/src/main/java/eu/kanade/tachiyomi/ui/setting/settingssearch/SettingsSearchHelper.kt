@@ -2,11 +2,11 @@ package eu.kanade.tachiyomi.ui.setting.settingssearch
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Resources
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceGroup
 import androidx.preference.PreferenceManager
-import eu.kanade.tachiyomi.ui.more.AboutController
 import eu.kanade.tachiyomi.ui.setting.SettingsAdvancedController
 import eu.kanade.tachiyomi.ui.setting.SettingsBackupController
 import eu.kanade.tachiyomi.ui.setting.SettingsBrowseController
@@ -18,6 +18,8 @@ import eu.kanade.tachiyomi.ui.setting.SettingsParentalControlsController
 import eu.kanade.tachiyomi.ui.setting.SettingsReaderController
 import eu.kanade.tachiyomi.ui.setting.SettingsSecurityController
 import eu.kanade.tachiyomi.ui.setting.SettingsTrackingController
+import eu.kanade.tachiyomi.util.lang.launchNow
+import eu.kanade.tachiyomi.util.system.isLTR
 import kotlin.reflect.KClass
 import kotlin.reflect.full.createInstance
 
@@ -38,8 +40,7 @@ object SettingsSearchHelper {
         SettingsParentalControlsController::class,
         SettingsReaderController::class,
         SettingsSecurityController::class,
-        SettingsTrackingController::class,
-        AboutController::class
+        SettingsTrackingController::class
     )
 
     /**
@@ -48,18 +49,29 @@ object SettingsSearchHelper {
     @SuppressLint("RestrictedApi")
     fun initPreferenceSearchResultCollection(context: Context) {
         val preferenceManager = PreferenceManager(context)
-
         prefSearchResultList.clear()
 
-        settingControllersList.forEach { kClass ->
-            val ctrl = kClass.createInstance()
-            val settingsPrefScreen = ctrl.setupPreferenceScreen(preferenceManager.createPreferenceScreen(context))
-            val prefCount = settingsPrefScreen.preferenceCount
-            for (i in 0 until prefCount) {
-                val rootPref = settingsPrefScreen.getPreference(i)
-                if (rootPref.title == null) continue // no title, not a preference. (note: only info notes appear to not have titles)
-                getSettingSearchResult(ctrl, rootPref, "${settingsPrefScreen.title}")
+        launchNow {
+            settingControllersList.forEach { kClass ->
+                val ctrl = kClass.createInstance()
+                val settingsPrefScreen = ctrl.setupPreferenceScreen(preferenceManager.createPreferenceScreen(context))
+                val prefCount = settingsPrefScreen.preferenceCount
+                for (i in 0 until prefCount) {
+                    val rootPref = settingsPrefScreen.getPreference(i)
+                    if (rootPref.title == null) continue // no title, not a preference. (note: only info notes appear to not have titles)
+                    getSettingSearchResult(ctrl, rootPref, "${settingsPrefScreen.title}")
+                }
             }
+        }
+    }
+
+    fun getFilteredResults(query: String): List<SettingsSearchResult> {
+        return prefSearchResultList.filter {
+            val inTitle = it.title.contains(query, true)
+            val inSummary = it.summary.contains(query, true)
+            val inBreadcrumb = it.breadcrumb.contains(query, true)
+
+            return@filter inTitle || inSummary || inBreadcrumb
         }
     }
 
@@ -69,7 +81,7 @@ object SettingsSearchHelper {
     private fun getSettingSearchResult(ctrl: SettingsController, pref: Preference, breadcrumbs: String = "") {
         when (pref) {
             is PreferenceGroup -> {
-                val breadcrumbsStr = breadcrumbs + " > ${pref.title}"
+                val breadcrumbsStr = addLocalizedBreadcrumb(breadcrumbs, "${pref.title}")
 
                 for (x in 0 until pref.preferenceCount) {
                     val subPref = pref.getPreference(x)
@@ -77,7 +89,7 @@ object SettingsSearchHelper {
                 }
             }
             is PreferenceCategory -> {
-                val breadcrumbsStr = breadcrumbs + " > ${pref.title}"
+                val breadcrumbsStr = addLocalizedBreadcrumb(breadcrumbs, "${pref.title}")
 
                 for (x in 0 until pref.preferenceCount) {
                     val subPref = pref.getPreference(x)
@@ -88,7 +100,7 @@ object SettingsSearchHelper {
                 // Is an actual preference
                 val title = pref.title.toString()
                 val summary = if (pref.summary != null) pref.summary.toString() else ""
-                val breadcrumbsStr = breadcrumbs + " > ${pref.title}"
+                val breadcrumbsStr = addLocalizedBreadcrumb(breadcrumbs, "${pref.title}")
 
                 prefSearchResultList.add(
                     SettingsSearchResult(
@@ -100,6 +112,16 @@ object SettingsSearchHelper {
                     )
                 )
             }
+        }
+    }
+
+    private fun addLocalizedBreadcrumb(path: String, node: String): String {
+        return if (Resources.getSystem().isLTR) {
+            // This locale reads left to right.
+            "$path > $node"
+        } else {
+            // This locale reads right to left.
+            "$node < $path"
         }
     }
 
