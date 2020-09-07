@@ -27,6 +27,7 @@ class SettingsSearchController :
      * Adapter containing search results grouped by lang.
      */
     protected var adapter: SettingsSearchAdapter? = null
+    lateinit var searchView: SearchView
 
     init {
         setHasOptionsMenu(true)
@@ -69,7 +70,7 @@ class SettingsSearchController :
 
         // Initialize search menu
         val searchItem = menu.findItem(R.id.action_search)
-        val searchView = searchItem.actionView as SearchView
+        searchView = searchItem.actionView as SearchView
         searchView.maxWidth = Int.MAX_VALUE
 
         // Change hint to show "search settings."
@@ -80,20 +81,17 @@ class SettingsSearchController :
 
         searchItem.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
             override fun onMenuItemActionExpand(item: MenuItem?): Boolean {
-                searchView.onActionViewExpanded() // Required to show the query in the view
-                setItems(getResultSet())
                 return true
             }
 
             override fun onMenuItemActionCollapse(item: MenuItem?): Boolean {
-                return true
+                router.popCurrentController()
+                return false
             }
         })
 
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
-                searchItem.collapseActionView()
-                setTitle(query) // Update toolbar title
                 setItems(getResultSet(query))
                 return false
             }
@@ -103,6 +101,8 @@ class SettingsSearchController :
                 return false
             }
         })
+
+        searchView.setQuery(presenter.preferences.lastSearchQuerySearchSettings(), true)
     }
 
     override fun onViewCreated(view: View) {
@@ -135,18 +135,15 @@ class SettingsSearchController :
 
     /**
      * returns a list of `SettingsSearchItem` to be shown as search results
+     * Future update: should we add a minimum length to the query before displaying results? Consider other languages.
      */
     fun getResultSet(query: String? = null): List<SettingsSearchItem> {
-        val list = mutableListOf<SettingsSearchItem>()
-
         if (!query.isNullOrBlank()) {
-            SettingsSearchHelper.getFilteredResults(query)
-                .forEach {
-                    list.add(SettingsSearchItem(it, null))
-                }
+            return SettingsSearchHelper.getFilteredResults(query)
+                .map { SettingsSearchItem(it, null) }
         }
 
-        return list
+        return mutableListOf()
     }
 
     /**
@@ -162,6 +159,10 @@ class SettingsSearchController :
      * Opens a catalogue with the given search.
      */
     override fun onTitleClick(ctrl: SettingsController) {
+        searchView.query.let {
+            presenter.preferences.lastSearchQuerySearchSettings(it.toString())
+        }
+
         router.pushController(ctrl.withFadeTransaction())
     }
 }

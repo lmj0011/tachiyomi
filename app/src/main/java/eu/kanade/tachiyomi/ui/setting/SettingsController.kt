@@ -19,6 +19,7 @@ import com.bluelinelabs.conductor.ControllerChangeType
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
 import eu.kanade.tachiyomi.ui.base.controller.BaseController
+import eu.kanade.tachiyomi.util.system.getResourceColor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -82,14 +83,14 @@ abstract class SettingsController : PreferenceController() {
     }
 
     private fun animatePreferenceHighlight(view: View) {
-        val duration = 500L
-        val repeat = 2
-
-        val colorAnimation = ValueAnimator.ofObject(ArgbEvaluator(), Color.TRANSPARENT, Color.WHITE)
-        colorAnimation.duration = duration
-        colorAnimation.repeatCount = repeat
-        colorAnimation.addUpdateListener { animator -> view.setBackgroundColor(animator.animatedValue as Int) }
-        colorAnimation.reverse()
+        ValueAnimator
+            .ofObject(ArgbEvaluator(), Color.TRANSPARENT, view.context.getResourceColor(R.attr.rippleColor))
+            .apply {
+                duration = 500L
+                repeatCount = 2
+                addUpdateListener { animator -> view.setBackgroundColor(animator.animatedValue as Int) }
+                reverse()
+            }
     }
 
     open fun getTitle(): String? {
