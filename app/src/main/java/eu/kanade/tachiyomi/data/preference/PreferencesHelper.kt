@@ -279,6 +279,6 @@ class PreferencesHelper(val context: Context) {
         else prefs.edit { putInt(Keys.defaultChapterSortByAscendingOrDescending, Manga.SORT_ASC) }
     }
     fun lastSearchQuerySearchSettings() = prefs.getString("last_search_query", "")
-    
+
     fun lastSearchQuerySearchSettings(query: String) = prefs.edit { putString("last_search_query", query) }
 }
