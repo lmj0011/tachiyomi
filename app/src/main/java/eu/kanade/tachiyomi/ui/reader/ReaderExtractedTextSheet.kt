@@ -13,10 +13,10 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.main.DeepLinkActivity
 import eu.kanade.tachiyomi.ui.main.MainActivity.Companion.INTENT_SEARCH
 import eu.kanade.tachiyomi.ui.main.MainActivity.Companion.INTENT_SEARCH_QUERY
-import kotlin.math.max
-import kotlin.math.min
 import kotlinx.android.synthetic.main.reader_extract_page_text_sheet.*
 import timber.log.Timber
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Sheet to show when a page is long clicked.

@@ -7,21 +7,21 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import eu.kanade.tachiyomi.data.backup.full.FullBackupManager
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
-import java.util.concurrent.TimeUnit
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.util.concurrent.TimeUnit
 
 class BackupCreatorJob(private val context: Context, workerParams: WorkerParameters) :
     Worker(context, workerParams) {
 
     override fun doWork(): Result {
         val preferences = Injekt.get<PreferencesHelper>()
-        val backupManager = BackupManager(context)
         val uri = preferences.backupsDirectory().get().toUri()
         val flags = BackupCreateService.BACKUP_ALL
         return try {
-            backupManager.createBackup(uri, flags, true)
+            FullBackupManager(context).createBackup(uri, flags, true)
             Result.success()
         } catch (e: Exception) {
             Result.failure()
@@ -36,8 +36,10 @@ class BackupCreatorJob(private val context: Context, workerParams: WorkerParamet
             val interval = prefInterval ?: preferences.backupInterval().get()
             if (interval > 0) {
                 val request = PeriodicWorkRequestBuilder<BackupCreatorJob>(
-                    interval.toLong(), TimeUnit.HOURS,
-                    10, TimeUnit.MINUTES
+                    interval.toLong(),
+                    TimeUnit.HOURS,
+                    10,
+                    TimeUnit.MINUTES
                 )
                     .addTag(TAG)
                     .build()

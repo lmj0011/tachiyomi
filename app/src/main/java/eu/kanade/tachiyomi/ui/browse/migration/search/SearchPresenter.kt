@@ -4,31 +4,38 @@ import android.os.Bundle
 import com.jakewharton.rxrelay.BehaviorRelay
 import eu.kanade.tachiyomi.data.database.models.Manga
 import eu.kanade.tachiyomi.data.database.models.MangaCategory
+import eu.kanade.tachiyomi.data.database.models.toMangaInfo
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.toSChapter
 import eu.kanade.tachiyomi.ui.browse.migration.MigrationFlags
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchCardItem
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchItem
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchPresenter
 import eu.kanade.tachiyomi.util.chapter.syncChaptersWithSource
+import eu.kanade.tachiyomi.util.lang.launchIO
+import eu.kanade.tachiyomi.util.lang.launchUI
+import eu.kanade.tachiyomi.util.lang.withUIContext
+import eu.kanade.tachiyomi.util.system.toast
 import java.util.Date
-import rx.Observable
-import rx.android.schedulers.AndroidSchedulers
-import rx.schedulers.Schedulers
 
 class SearchPresenter(
     initialQuery: String? = "",
     private val manga: Manga
 ) : GlobalSearchPresenter(initialQuery) {
 
-    private val replacingMangaRelay = BehaviorRelay.create<Boolean>()
+    private val replacingMangaRelay = BehaviorRelay.create<Pair<Boolean, Manga?>>()
 
     override fun onCreate(savedState: Bundle?) {
         super.onCreate(savedState)
 
-        replacingMangaRelay.subscribeLatestCache({ controller, isReplacingManga -> (controller as? SearchController)?.renderIsReplacingManga(isReplacingManga) })
+        replacingMangaRelay.subscribeLatestCache(
+            { controller, (isReplacingManga, newManga) ->
+                (controller as? SearchController)?.renderIsReplacingManga(isReplacingManga, newManga)
+            }
+        )
     }
 
     override fun getEnabledSources(): List<CatalogueSource> {
@@ -52,16 +59,20 @@ class SearchPresenter(
     fun migrateManga(prevManga: Manga, manga: Manga, replace: Boolean) {
         val source = sourceManager.get(manga.source) ?: return
 
-        replacingMangaRelay.call(true)
+        replacingMangaRelay.call(Pair(true, null))
 
-        Observable.defer { source.fetchChapterList(manga) }
-            .onErrorReturn { emptyList() }
-            .doOnNext { migrateMangaInternal(source, it, prevManga, manga, replace) }
-            .onErrorReturn { emptyList() }
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .doOnUnsubscribe { replacingMangaRelay.call(false) }
-            .subscribe()
+        presenterScope.launchIO {
+            try {
+                val chapters = source.getChapterList(manga.toMangaInfo())
+                    .map { it.toSChapter() }
+
+                migrateMangaInternal(source, chapters, prevManga, manga, replace)
+            } catch (e: Throwable) {
+                withUIContext { view?.applicationContext?.toast(e.message) }
+            }
+
+            presenterScope.launchUI { replacingMangaRelay.call(Pair(false, manga)) }
+        }
     }
 
     private fun migrateMangaInternal(
@@ -97,24 +108,22 @@ class SearchPresenter(
                 val prevMangaChapters = db.getChapters(prevManga).executeAsBlocking()
                 val maxChapterRead = prevMangaChapters
                     .filter { it.read }
-                    .maxBy { it.chapter_number }?.chapter_number
-                val bookmarkedChapters = prevMangaChapters
-                    .filter { it.bookmark && it.isRecognizedNumber }
-                    .map { it.chapter_number }
-                if (maxChapterRead != null) {
-                    val dbChapters = db.getChapters(manga).executeAsBlocking()
-                    for (chapter in dbChapters) {
-                        if (chapter.isRecognizedNumber) {
-                            if (chapter.chapter_number <= maxChapterRead) {
-                                chapter.read = true
-                            }
-                            if (chapter.chapter_number in bookmarkedChapters) {
-                                chapter.bookmark = true
-                            }
+                    .maxOfOrNull { it.chapter_number } ?: 0f
+                val dbChapters = db.getChapters(manga).executeAsBlocking()
+                for (chapter in dbChapters) {
+                    if (chapter.isRecognizedNumber) {
+                        val prevChapter = prevMangaChapters
+                            .find { it.isRecognizedNumber && it.chapter_number == chapter.chapter_number }
+                        if (prevChapter != null) {
+                            chapter.date_fetch = prevChapter.date_fetch
+                            chapter.bookmark = prevChapter.bookmark
+                        }
+                        if (chapter.chapter_number <= maxChapterRead) {
+                            chapter.read = true
                         }
                     }
-                    db.insertChapters(dbChapters).executeAsBlocking()
                 }
+                db.insertChapters(dbChapters).executeAsBlocking()
             }
 
             // Update categories
@@ -144,9 +153,9 @@ class SearchPresenter(
 
             // Update reading preferences
             manga.chapter_flags = prevManga.chapter_flags
-            db.updateFlags(manga).executeAsBlocking()
-            manga.viewer = prevManga.viewer
-            db.updateMangaViewer(manga).executeAsBlocking()
+            db.updateChapterFlags(manga).executeAsBlocking()
+            manga.viewer_flags = prevManga.viewer_flags
+            db.updateViewerFlags(manga).executeAsBlocking()
 
             // Update date added
             if (replace) {

@@ -5,11 +5,11 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import dev.chrisbanes.insetter.applyInsetter
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadService
 import eu.kanade.tachiyomi.data.download.model.Download
@@ -18,13 +18,10 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.base.controller.FabController
 import eu.kanade.tachiyomi.ui.base.controller.NucleusController
 import eu.kanade.tachiyomi.util.view.shrinkOnScroll
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import reactivecircus.flowbinding.android.view.clicks
 import rx.Observable
 import rx.Subscription
 import rx.android.schedulers.AndroidSchedulers
+import java.util.concurrent.TimeUnit
 
 /**
  * Controller that shows the currently active downloads.
@@ -57,10 +54,7 @@ class DownloadController :
         setHasOptionsMenu(true)
     }
 
-    override fun inflateView(inflater: LayoutInflater, container: ViewGroup): View {
-        binding = DownloadControllerBinding.inflate(inflater)
-        return binding.root
-    }
+    override fun createBinding(inflater: LayoutInflater) = DownloadControllerBinding.inflate(inflater)
 
     override fun createPresenter(): DownloadPresenter {
         return DownloadPresenter()
@@ -72,6 +66,12 @@ class DownloadController :
 
     override fun onViewCreated(view: View) {
         super.onViewCreated(view)
+
+        binding.recycler.applyInsetter {
+            type(navigationBars = true) {
+                padding()
+            }
+        }
 
         // Check if download queue is empty and update information accordingly.
         setInformationView()
@@ -104,23 +104,22 @@ class DownloadController :
 
     override fun configureFab(fab: ExtendedFloatingActionButton) {
         actionFab = fab
-        fab.clicks()
-            .onEach {
-                val context = applicationContext ?: return@onEach
+        fab.setOnClickListener {
+            val context = applicationContext ?: return@setOnClickListener
 
-                if (isRunning) {
-                    DownloadService.stop(context)
-                    presenter.pauseDownloads()
-                } else {
-                    DownloadService.start(context)
-                }
-
-                setInformationView()
+            if (isRunning) {
+                DownloadService.stop(context)
+                presenter.pauseDownloads()
+            } else {
+                DownloadService.start(context)
             }
-            .launchIn(scope)
+
+            setInformationView()
+        }
     }
 
     override fun cleanupFab(fab: ExtendedFloatingActionButton) {
+        fab.setOnClickListener(null)
         actionFabScrollListener?.let { binding.recycler.removeOnScrollListener(it) }
         actionFab = null
     }
@@ -151,18 +150,24 @@ class DownloadController :
                 presenter.clearQueue()
             }
             R.id.newest, R.id.oldest -> {
-                val adapter = adapter ?: return false
-                val items = adapter.currentItems.sortedBy { it.download.chapter.date_upload }
-                    .toMutableList()
-                if (item.itemId == R.id.newest) {
-                    items.reverse()
-                }
-                adapter.updateDataSet(items)
-                val downloads = items.mapNotNull { it.download }
-                presenter.reorder(downloads)
+                reorderQueue({ it.download.chapter.date_upload }, item.itemId == R.id.newest)
+            }
+            R.id.asc, R.id.desc -> {
+                reorderQueue({ it.download.chapter.chapter_number }, item.itemId == R.id.desc)
             }
         }
         return super.onOptionsItemSelected(item)
+    }
+
+    private fun <R : Comparable<R>> reorderQueue(selector: (DownloadItem) -> R, reverse: Boolean = false) {
+        val adapter = adapter ?: return
+        val items = adapter.currentItems.sortedBy(selector).toMutableList()
+        if (reverse) {
+            items.reverse()
+        }
+        adapter.updateDataSet(items)
+        val downloads = items.mapNotNull { it.download }
+        presenter.reorder(downloads)
     }
 
     /**
@@ -172,17 +177,17 @@ class DownloadController :
      */
     private fun onStatusChange(download: Download) {
         when (download.status) {
-            Download.DOWNLOADING -> {
+            Download.State.DOWNLOADING -> {
                 observeProgress(download)
                 // Initial update of the downloaded pages
                 onUpdateDownloadedPages(download)
             }
-            Download.DOWNLOADED -> {
+            Download.State.DOWNLOADED -> {
                 unsubscribeProgress(download)
                 onUpdateProgress(download)
                 onUpdateDownloadedPages(download)
             }
-            Download.ERROR -> unsubscribeProgress(download)
+            Download.State.ERROR -> unsubscribeProgress(download)
         }
     }
 
@@ -350,6 +355,15 @@ class DownloadController :
                 adapter.removeItem(position)
                 val downloads = adapter.currentItems.mapNotNull { it?.download }
                 presenter.reorder(downloads)
+            }
+            R.id.cancel_series -> {
+                val download = adapter?.getItem(position)?.download ?: return
+                val allDownloadsForSeries = adapter?.currentItems
+                    ?.filter { download.manga.id == it.download.manga.id }
+                    ?.map(DownloadItem::download)
+                if (!allDownloadsForSeries.isNullOrEmpty()) {
+                    presenter.cancelDownloads(allDownloadsForSeries)
+                }
             }
         }
     }

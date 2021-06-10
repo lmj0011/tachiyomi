@@ -7,10 +7,8 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.view.ActionMode
-import androidx.appcompat.widget.SearchView
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.isVisible
 import com.bluelinelabs.conductor.ControllerChangeHandler
@@ -19,6 +17,7 @@ import com.google.android.material.tabs.TabLayout
 import com.jakewharton.rxrelay.BehaviorRelay
 import com.jakewharton.rxrelay.PublishRelay
 import com.tfcporciuncula.flow.Preference
+import dev.chrisbanes.insetter.applyInsetter
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.database.models.Category
 import eu.kanade.tachiyomi.data.database.models.Manga
@@ -27,23 +26,19 @@ import eu.kanade.tachiyomi.data.preference.PreferencesHelper
 import eu.kanade.tachiyomi.data.preference.asImmediateFlow
 import eu.kanade.tachiyomi.databinding.LibraryControllerBinding
 import eu.kanade.tachiyomi.source.LocalSource
-import eu.kanade.tachiyomi.ui.base.controller.NucleusController
 import eu.kanade.tachiyomi.ui.base.controller.RootController
+import eu.kanade.tachiyomi.ui.base.controller.SearchableNucleusController
 import eu.kanade.tachiyomi.ui.base.controller.TabbedController
 import eu.kanade.tachiyomi.ui.base.controller.withFadeTransaction
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchController
 import eu.kanade.tachiyomi.ui.main.MainActivity
-import eu.kanade.tachiyomi.ui.main.offsetAppbarHeight
 import eu.kanade.tachiyomi.ui.manga.MangaController
 import eu.kanade.tachiyomi.util.system.getResourceColor
 import eu.kanade.tachiyomi.util.system.toast
-import kotlinx.android.synthetic.main.main_activity.tabs
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import reactivecircus.flowbinding.android.view.clicks
-import reactivecircus.flowbinding.appcompat.queryTextChanges
 import reactivecircus.flowbinding.viewpager.pageSelections
 import rx.Subscription
 import uy.kohesive.injekt.Injekt
@@ -52,7 +47,7 @@ import uy.kohesive.injekt.api.get
 class LibraryController(
     bundle: Bundle? = null,
     private val preferences: PreferencesHelper = Injekt.get()
-) : NucleusController<LibraryControllerBinding, LibraryPresenter>(bundle),
+) : SearchableNucleusController<LibraryControllerBinding, LibraryPresenter>(bundle),
     RootController,
     TabbedController,
     ActionMode.Callback,
@@ -68,11 +63,6 @@ class LibraryController(
      * Action mode for selections.
      */
     private var actionMode: ActionMode? = null
-
-    /**
-     * Library search query.
-     */
-    private var query: String = ""
 
     /**
      * Currently selected mangas.
@@ -122,7 +112,11 @@ class LibraryController(
 
     private var tabsVisibilityRelay: BehaviorRelay<Boolean> = BehaviorRelay.create(false)
 
+    private var mangaCountVisibilityRelay: BehaviorRelay<Boolean> = BehaviorRelay.create(false)
+
     private var tabsVisibilitySubscription: Subscription? = null
+
+    private var mangaCountVisibilitySubscription: Subscription? = null
 
     init {
         setHasOptionsMenu(true)
@@ -142,48 +136,66 @@ class LibraryController(
     }
 
     private fun updateTitle() {
-        if (preferences.categoryTabs().get()) {
-            currentTitle = resources?.getString(R.string.label_library)
+        val showCategoryTabs = preferences.categoryTabs().get()
+        val currentCategory = adapter?.categories?.getOrNull(binding.libraryPager.currentItem)
+
+        var title = if (showCategoryTabs) {
+            resources?.getString(R.string.label_library)
         } else {
-            adapter?.categories?.get(binding.libraryPager.currentItem)?.let {
-                currentTitle = it.name
+            currentCategory?.name
+        }
+
+        if (preferences.categoryNumberOfItems().get() && libraryMangaRelay.hasValue()) {
+            libraryMangaRelay.value.mangas.let { mangaMap ->
+                if (!showCategoryTabs) {
+                    title += " (${mangaMap[currentCategory?.id]?.size ?: 0})"
+                } else if (adapter?.categories?.size == 1) {
+                    // Only "Default" category
+                    title += " (${mangaMap[0]?.size ?: 0})"
+                }
             }
         }
+
+        currentTitle = title
     }
 
     override fun createPresenter(): LibraryPresenter {
         return LibraryPresenter()
     }
 
-    override fun inflateView(inflater: LayoutInflater, container: ViewGroup): View {
-        binding = LibraryControllerBinding.inflate(inflater)
-        return binding.root
-    }
+    override fun createBinding(inflater: LayoutInflater) = LibraryControllerBinding.inflate(inflater)
 
     override fun onViewCreated(view: View) {
         super.onViewCreated(view)
 
+        binding.actionToolbar.applyInsetter {
+            type(navigationBars = true) {
+                margin(bottom = true)
+            }
+        }
+
         adapter = LibraryAdapter(this)
         binding.libraryPager.adapter = adapter
         binding.libraryPager.pageSelections()
+            .drop(1)
             .onEach {
                 preferences.lastUsedCategory().set(it)
                 activeCategory = it
                 updateTitle()
             }
-            .launchIn(scope)
+            .launchIn(viewScope)
 
         getColumnsPreferenceForCurrentOrientation().asImmediateFlow { mangaPerRow = it }
             .drop(1)
             // Set again the adapter to recalculate the covers height
             .onEach { reattachAdapter() }
-            .launchIn(scope)
+            .launchIn(viewScope)
 
         if (selectedMangas.isNotEmpty()) {
             createActionModeIfNeeded()
         }
 
-        settingsSheet = LibrarySettingsSheet(activity!!) { group ->
+        settingsSheet = LibrarySettingsSheet(router) { group ->
             when (group) {
                 is LibrarySettingsSheet.Filter.FilterGroup -> onFilterChanged()
                 is LibrarySettingsSheet.Sort.SortGroup -> onSortChanged()
@@ -193,31 +205,28 @@ class LibraryController(
             }
         }
 
-        if (preferences.downloadedOnly().get()) {
-            binding.downloadedOnly.isVisible = true
-        }
-
         binding.btnGlobalSearch.clicks()
             .onEach {
                 router.pushController(
-                    GlobalSearchController(query).withFadeTransaction()
+                    GlobalSearchController(presenter.query).withFadeTransaction()
                 )
             }
-            .launchIn(scope)
+            .launchIn(viewScope)
 
-        binding.actionToolbar.offsetAppbarHeight(activity!!)
+        (activity as? MainActivity)?.fixViewToBottom(binding.actionToolbar)
     }
 
     override fun onChangeStarted(handler: ControllerChangeHandler, type: ControllerChangeType) {
         super.onChangeStarted(handler, type)
         if (type.isEnter) {
-            activity?.tabs?.setupWithViewPager(binding.libraryPager)
+            (activity as? MainActivity)?.binding?.tabs?.setupWithViewPager(binding.libraryPager)
             presenter.subscribeLibrary()
         }
     }
 
     override fun onDestroyView(view: View) {
         destroyActionModeIfNeeded()
+        (activity as? MainActivity)?.clearFixViewToBottom(binding.actionToolbar)
         binding.actionToolbar.destroy()
         adapter?.onDestroy()
         adapter = null
@@ -240,6 +249,10 @@ class LibraryController(
             } else {
                 tabAnimator?.collapse()
             }
+        }
+        mangaCountVisibilitySubscription?.unsubscribe()
+        mangaCountVisibilitySubscription = mangaCountVisibilityRelay.subscribe {
+            adapter?.notifyDataSetChanged()
         }
     }
 
@@ -272,6 +285,9 @@ class LibraryController(
 
         // Set the categories
         adapter.categories = categories
+        adapter.itemsPerCategory = adapter.categories
+            .map { (it.id ?: -1) to (mangaMap[it.id]?.size ?: 0) }
+            .toMap()
 
         // Restore active category.
         binding.libraryPager.setCurrentItem(activeCat, false)
@@ -282,12 +298,15 @@ class LibraryController(
         // Delay the scroll position to allow the view to be properly measured.
         view.post {
             if (isAttached) {
-                activity?.tabs?.setScrollPosition(binding.libraryPager.currentItem, 0f, true)
+                (activity as? MainActivity)?.binding?.tabs?.setScrollPosition(binding.libraryPager.currentItem, 0f, true)
             }
         }
 
         // Send the manga map to child fragments after the adapter is updated.
         libraryMangaRelay.call(LibraryMangaEvent(mangaMap))
+
+        // Finally update the title
+        updateTitle()
     }
 
     /**
@@ -314,6 +333,7 @@ class LibraryController(
 
     private fun onTabsSettingsChanged() {
         tabsVisibilityRelay.call(preferences.categoryTabs().get() && adapter?.categories?.size ?: 0 > 1)
+        mangaCountVisibilityRelay.call(preferences.categoryNumberOfItems().get())
         updateTitle()
     }
 
@@ -360,52 +380,21 @@ class LibraryController(
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
-        inflater.inflate(R.menu.library, menu)
-
-        val searchItem = menu.findItem(R.id.action_search)
-        val searchView = searchItem.actionView as SearchView
-        searchView.maxWidth = Int.MAX_VALUE
-        searchItem.fixExpand(onExpand = { invalidateMenuOnExpand() })
-
-        if (query.isNotEmpty()) {
-            searchItem.expandActionView()
-            searchView.setQuery(query, true)
-            searchView.clearFocus()
-
-            performSearch()
-
-            // Workaround for weird behavior where searchview gets empty text change despite
-            // query being set already
-            searchView.postDelayed({ initSearchHandler(searchView) }, 500)
-        } else {
-            initSearchHandler(searchView)
-        }
-
+        createOptionsMenu(menu, inflater, R.menu.library, R.id.action_search)
         // Mutate the filter icon because it needs to be tinted and the resource is shared.
         menu.findItem(R.id.action_filter).icon.mutate()
     }
 
     fun search(query: String) {
-        this.query = query
-    }
-
-    private fun initSearchHandler(searchView: SearchView) {
-        searchView.queryTextChanges()
-            // Ignore events if this controller isn't at the top to avoid query being reset
-            .filter { router.backstack.lastOrNull()?.controller() == this }
-            .onEach {
-                query = it.toString()
-                performSearch()
-            }
-            .launchIn(scope)
+        presenter.query = query
     }
 
     private fun performSearch() {
-        searchRelay.call(query)
-        if (query.isNotEmpty()) {
+        searchRelay.call(presenter.query)
+        if (presenter.query.isNotEmpty()) {
             binding.btnGlobalSearch.isVisible = true
             binding.btnGlobalSearch.text =
-                resources?.getString(R.string.action_global_search_query, query)
+                resources?.getString(R.string.action_global_search_query, presenter.query)
         } else {
             binding.btnGlobalSearch.isVisible = false
         }
@@ -571,8 +560,8 @@ class LibraryController(
         destroyActionModeIfNeeded()
     }
 
-    override fun deleteMangasFromLibrary(mangas: List<Manga>, deleteChapters: Boolean) {
-        presenter.removeMangaFromLibrary(mangas, deleteChapters)
+    override fun deleteMangas(mangas: List<Manga>, deleteFromLibrary: Boolean, deleteChapters: Boolean) {
+        presenter.removeMangas(mangas, deleteFromLibrary, deleteChapters)
         destroyActionModeIfNeeded()
     }
 
@@ -585,6 +574,14 @@ class LibraryController(
     private fun selectInverseCategoryManga() {
         adapter?.categories?.getOrNull(binding.libraryPager.currentItem)?.id?.let {
             selectInverseRelay.call(it)
+        }
+    }
+
+    override fun onSearchViewQueryTextChange(newText: String?) {
+        // Ignore events if this controller isn't at the top to avoid query being reset
+        if (router.backstack.lastOrNull()?.controller() == this) {
+            presenter.query = newText ?: ""
+            performSearch()
         }
     }
 }

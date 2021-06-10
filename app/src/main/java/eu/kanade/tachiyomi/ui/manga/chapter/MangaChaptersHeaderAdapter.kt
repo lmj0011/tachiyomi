@@ -9,10 +9,6 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.databinding.MangaChaptersHeaderBinding
 import eu.kanade.tachiyomi.ui.manga.MangaController
 import eu.kanade.tachiyomi.util.system.getResourceColor
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
@@ -26,7 +22,6 @@ class MangaChaptersHeaderAdapter(
     private var numChapters: Int? = null
     private var hasActiveFilters: Boolean = false
 
-    private val scope = CoroutineScope(Job() + Dispatchers.Main)
     private lateinit var binding: MangaChaptersHeaderBinding
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): HeaderViewHolder {
@@ -53,7 +48,6 @@ class MangaChaptersHeaderAdapter(
     }
 
     inner class HeaderViewHolder(private val view: View) : RecyclerView.ViewHolder(view) {
-        @ExperimentalCoroutinesApi
         fun bind() {
             binding.chaptersLabel.text = if (numChapters == null) {
                 view.context.getString(R.string.chapters)
@@ -64,13 +58,13 @@ class MangaChaptersHeaderAdapter(
             val filterColor = if (hasActiveFilters) {
                 view.context.getResourceColor(R.attr.colorFilterActive)
             } else {
-                view.context.getResourceColor(R.attr.colorOnPrimary)
+                view.context.getResourceColor(R.attr.colorOnBackground)
             }
-            DrawableCompat.setTint(binding.btnChaptersFilter.icon, filterColor)
+            DrawableCompat.setTint(binding.btnChaptersFilter.drawable, filterColor)
 
             merge(view.clicks(), binding.btnChaptersFilter.clicks())
                 .onEach { controller.showSettingsSheet() }
-                .launchIn(scope)
+                .launchIn(controller.viewScope)
         }
     }
 }

@@ -1,33 +1,39 @@
 package eu.kanade.tachiyomi.ui.library
 
-import android.app.Activity
 import android.content.Context
 import android.util.AttributeSet
 import android.view.View
+import com.bluelinelabs.conductor.Router
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.preference.PreferenceValues.DisplayMode
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
+import eu.kanade.tachiyomi.data.track.TrackManager
+import eu.kanade.tachiyomi.data.track.TrackService
 import eu.kanade.tachiyomi.widget.ExtendedNavigationView
-import eu.kanade.tachiyomi.widget.TabbedBottomSheetDialog
+import eu.kanade.tachiyomi.widget.ExtendedNavigationView.Item.TriStateGroup.State
+import eu.kanade.tachiyomi.widget.sheet.TabbedBottomSheetDialog
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 
 class LibrarySettingsSheet(
-    activity: Activity,
+    router: Router,
+    private val trackManager: TrackManager = Injekt.get(),
     onGroupClickListener: (ExtendedNavigationView.Group) -> Unit
-) : TabbedBottomSheetDialog(activity) {
+) : TabbedBottomSheetDialog(router.activity!!) {
 
     val filters: Filter
     private val sort: Sort
     private val display: Display
 
     init {
-        filters = Filter(activity)
+        filters = Filter(router.activity!!)
         filters.onGroupClicked = onGroupClickListener
 
-        sort = Sort(activity)
+        sort = Sort(router.activity!!)
         sort.onGroupClicked = onGroupClickListener
 
-        display = Display(activity)
+        display = Display(router.activity!!)
         display.onGroupClicked = onGroupClickListener
     }
 
@@ -59,33 +65,73 @@ class LibrarySettingsSheet(
          * Returns true if there's at least one filter from [FilterGroup] active.
          */
         fun hasActiveFilters(): Boolean {
-            return filterGroup.items.any { it.checked }
+            return filterGroup.items.filterIsInstance<Item.TriStateGroup>().any { it.state != State.IGNORE.value }
         }
 
         inner class FilterGroup : Group {
 
-            private val downloaded = Item.CheckboxGroup(R.string.action_filter_downloaded, this)
-            private val unread = Item.CheckboxGroup(R.string.action_filter_unread, this)
-            private val completed = Item.CheckboxGroup(R.string.completed, this)
+            private val downloaded = Item.TriStateGroup(R.string.action_filter_downloaded, this)
+            private val unread = Item.TriStateGroup(R.string.action_filter_unread, this)
+            private val completed = Item.TriStateGroup(R.string.completed, this)
+            private val trackFilters: Map<Int, Item.TriStateGroup>
 
             override val header = null
-            override val items = listOf(downloaded, unread, completed)
+            override val items: List<Item>
             override val footer = null
 
+            init {
+                trackManager.services.filter { service -> service.isLogged }
+                    .also { services ->
+                        val size = services.size
+                        trackFilters = services.associate { service ->
+                            Pair(service.id, Item.TriStateGroup(getServiceResId(service, size), this))
+                        }
+                        val list: MutableList<Item> = mutableListOf(downloaded, unread, completed)
+                        if (size > 1) list.add(Item.Header(R.string.action_filter_tracked))
+                        list.addAll(trackFilters.values)
+                        items = list
+                    }
+            }
+
+            private fun getServiceResId(service: TrackService, size: Int): Int {
+                return if (size > 1) service.nameRes() else R.string.action_filter_tracked
+            }
+
             override fun initModels() {
-                downloaded.checked = preferences.downloadedOnly().get() || preferences.filterDownloaded().get()
-                downloaded.enabled = !preferences.downloadedOnly().get()
-                unread.checked = preferences.filterUnread().get()
-                completed.checked = preferences.filterCompleted().get()
+                if (preferences.downloadedOnly().get()) {
+                    downloaded.state = State.INCLUDE.value
+                    downloaded.enabled = false
+                } else {
+                    downloaded.state = preferences.filterDownloaded().get()
+                }
+                unread.state = preferences.filterUnread().get()
+                completed.state = preferences.filterCompleted().get()
+
+                trackFilters.forEach { trackFilter ->
+                    trackFilter.value.state = preferences.filterTracking(trackFilter.key).get()
+                }
             }
 
             override fun onItemClicked(item: Item) {
-                item as Item.CheckboxGroup
-                item.checked = !item.checked
+                item as Item.TriStateGroup
+                val newState = when (item.state) {
+                    State.IGNORE.value -> State.INCLUDE.value
+                    State.INCLUDE.value -> State.EXCLUDE.value
+                    State.EXCLUDE.value -> State.IGNORE.value
+                    else -> throw Exception("Unknown State")
+                }
+                item.state = newState
                 when (item) {
-                    downloaded -> preferences.filterDownloaded().set(item.checked)
-                    unread -> preferences.filterUnread().set(item.checked)
-                    completed -> preferences.filterCompleted().set(item.checked)
+                    downloaded -> preferences.filterDownloaded().set(newState)
+                    unread -> preferences.filterUnread().set(newState)
+                    completed -> preferences.filterCompleted().set(newState)
+                    else -> {
+                        trackFilters.forEach { trackFilter ->
+                            if (trackFilter.value == item) {
+                                preferences.filterTracking(trackFilter.key).set(newState)
+                            }
+                        }
+                    }
                 }
 
                 adapter.notifyItemChanged(item)
@@ -111,11 +157,12 @@ class LibrarySettingsSheet(
             private val lastChecked = Item.MultiSort(R.string.action_sort_last_checked, this)
             private val unread = Item.MultiSort(R.string.action_filter_unread, this)
             private val latestChapter = Item.MultiSort(R.string.action_sort_latest_chapter, this)
+            private val chapterFetchDate = Item.MultiSort(R.string.action_sort_chapter_fetch_date, this)
             private val dateAdded = Item.MultiSort(R.string.action_sort_date_added, this)
 
             override val header = null
             override val items =
-                listOf(alphabetically, lastRead, lastChecked, unread, total, latestChapter, dateAdded)
+                listOf(alphabetically, lastRead, lastChecked, unread, total, latestChapter, chapterFetchDate, dateAdded)
             override val footer = null
 
             override fun initModels() {
@@ -138,6 +185,8 @@ class LibrarySettingsSheet(
                     if (sorting == LibrarySort.TOTAL) order else Item.MultiSort.SORT_NONE
                 latestChapter.state =
                     if (sorting == LibrarySort.LATEST_CHAPTER) order else Item.MultiSort.SORT_NONE
+                chapterFetchDate.state =
+                    if (sorting == LibrarySort.CHAPTER_FETCH_DATE) order else Item.MultiSort.SORT_NONE
                 dateAdded.state =
                     if (sorting == LibrarySort.DATE_ADDED) order else Item.MultiSort.SORT_NONE
             }
@@ -165,6 +214,7 @@ class LibrarySettingsSheet(
                         unread -> LibrarySort.UNREAD
                         total -> LibrarySort.TOTAL
                         latestChapter -> LibrarySort.LATEST_CHAPTER
+                        chapterFetchDate -> LibrarySort.CHAPTER_FETCH_DATE
                         dateAdded -> LibrarySort.DATE_ADDED
                         else -> throw Exception("Unknown sorting")
                     }
@@ -226,14 +276,16 @@ class LibrarySettingsSheet(
         inner class BadgeGroup : Group {
             private val downloadBadge = Item.CheckboxGroup(R.string.action_display_download_badge, this)
             private val unreadBadge = Item.CheckboxGroup(R.string.action_display_unread_badge, this)
+            private val localBadge = Item.CheckboxGroup(R.string.action_display_local_badge, this)
 
             override val header = Item.Header(R.string.badges_header)
-            override val items = listOf(downloadBadge, unreadBadge)
+            override val items = listOf(downloadBadge, unreadBadge, localBadge)
             override val footer = null
 
             override fun initModels() {
                 downloadBadge.checked = preferences.downloadBadge().get()
                 unreadBadge.checked = preferences.unreadBadge().get()
+                localBadge.checked = preferences.localBadge().get()
             }
 
             override fun onItemClicked(item: Item) {
@@ -242,6 +294,7 @@ class LibrarySettingsSheet(
                 when (item) {
                     downloadBadge -> preferences.downloadBadge().set((item.checked))
                     unreadBadge -> preferences.unreadBadge().set((item.checked))
+                    localBadge -> preferences.localBadge().set((item.checked))
                 }
                 adapter.notifyItemChanged(item)
             }
@@ -249,20 +302,23 @@ class LibrarySettingsSheet(
 
         inner class TabsGroup : Group {
             private val showTabs = Item.CheckboxGroup(R.string.action_display_show_tabs, this)
+            private val showNumberOfItems = Item.CheckboxGroup(R.string.action_display_show_number_of_items, this)
 
             override val header = Item.Header(R.string.tabs_header)
-            override val items = listOf(showTabs)
+            override val items = listOf(showTabs, showNumberOfItems)
             override val footer = null
 
             override fun initModels() {
                 showTabs.checked = preferences.categoryTabs().get()
+                showNumberOfItems.checked = preferences.categoryNumberOfItems().get()
             }
 
             override fun onItemClicked(item: Item) {
                 item as Item.CheckboxGroup
                 item.checked = !item.checked
                 when (item) {
-                    showTabs -> preferences.categoryTabs().set((item.checked))
+                    showTabs -> preferences.categoryTabs().set(item.checked)
+                    showNumberOfItems -> preferences.categoryNumberOfItems().set(item.checked)
                 }
                 adapter.notifyItemChanged(item)
             }

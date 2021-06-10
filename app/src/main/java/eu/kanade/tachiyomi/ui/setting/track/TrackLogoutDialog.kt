@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.setting.track
 
 import android.app.Dialog
 import android.os.Bundle
+import androidx.core.os.bundleOf
 import com.afollestad.materialdialogs.MaterialDialog
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.track.TrackManager
@@ -13,13 +14,14 @@ import uy.kohesive.injekt.api.get
 
 class TrackLogoutDialog(bundle: Bundle? = null) : DialogController(bundle) {
 
-    private val service = Injekt.get<TrackManager>().getService(args.getInt("key"))!!
+    private val service = Injekt.get<TrackManager>().getService(args.getInt("serviceId"))!!
 
-    constructor(service: TrackService) : this(Bundle().apply { putInt("key", service.id) })
+    constructor(service: TrackService) : this(bundleOf("serviceId" to service.id))
 
     override fun onCreateDialog(savedViewState: Bundle?): Dialog {
+        val serviceName = activity!!.getString(service.nameRes())
         return MaterialDialog(activity!!)
-            .title(text = activity!!.getString(R.string.logout_title, service.name))
+            .title(text = activity!!.getString(R.string.logout_title, serviceName))
             .positiveButton(R.string.logout) {
                 service.logout()
                 (targetController as? Listener)?.trackLogoutDialogClosed(service)

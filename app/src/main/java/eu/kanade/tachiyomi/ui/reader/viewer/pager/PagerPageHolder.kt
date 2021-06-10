@@ -2,7 +2,7 @@ package eu.kanade.tachiyomi.ui.reader.viewer.pager
 
 import android.annotation.SuppressLint
 import android.graphics.PointF
-import android.graphics.drawable.Drawable
+import android.graphics.drawable.Animatable
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
@@ -14,20 +14,15 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.isVisible
-import com.bumptech.glide.load.DataSource
-import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.load.engine.GlideException
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
-import com.bumptech.glide.load.resource.gif.GifDrawable
-import com.bumptech.glide.request.RequestListener
-import com.bumptech.glide.request.target.Target
-import com.bumptech.glide.request.transition.NoTransition
+import coil.imageLoader
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.davemorrissey.labs.subscaleview.ImageSource
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import com.github.chrisbanes.photoview.PhotoView
 import eu.kanade.tachiyomi.R
-import eu.kanade.tachiyomi.data.glide.GlideApp
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressBar
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerConfig.ZoomType
@@ -35,12 +30,13 @@ import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.ImageUtil
 import eu.kanade.tachiyomi.util.system.dpToPx
 import eu.kanade.tachiyomi.widget.ViewPagerAdapter
-import java.io.InputStream
-import java.util.concurrent.TimeUnit
 import rx.Observable
 import rx.Subscription
 import rx.android.schedulers.AndroidSchedulers
 import rx.schedulers.Schedulers
+import java.io.InputStream
+import java.nio.ByteBuffer
+import java.util.concurrent.TimeUnit
 
 /**
  * View of the ViewPager that contains a page of a chapter.
@@ -234,15 +230,20 @@ class PagerPageHolder(
         readImageHeaderSubscription = Observable
             .fromCallable {
                 val stream = streamFn().buffered(16)
-                openStream = stream
+                openStream = process(item, stream)
 
-                ImageUtil.findImageType(stream) == ImageUtil.ImageType.GIF
+                ImageUtil.isAnimatedAndSupported(stream)
             }
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
             .doOnNext { isAnimated ->
                 if (!isAnimated) {
-                    initSubsamplingImageView().setImage(ImageSource.inputStream(openStream!!))
+                    initSubsamplingImageView().apply {
+                        if (viewer.config.automaticBackground) {
+                            background = ImageUtil.chooseBackground(context, openStream!!)
+                        }
+                        setImage(ImageSource.inputStream(openStream!!))
+                    }
                 } else {
                     initImageView().setImage(openStream!!)
                 }
@@ -251,6 +252,49 @@ class PagerPageHolder(
             .flatMap { Observable.never<Unit>() }
             .doOnUnsubscribe { openStream?.close() }
             .subscribe({}, {})
+    }
+
+    private fun process(page: ReaderPage, imageStream: InputStream): InputStream {
+        if (!viewer.config.dualPageSplit) {
+            return imageStream
+        }
+
+        if (page is InsertPage) {
+            return splitInHalf(imageStream)
+        }
+
+        val isDoublePage = ImageUtil.isDoublePage(imageStream)
+        if (!isDoublePage) {
+            return imageStream
+        }
+
+        onPageSplit(page)
+
+        return splitInHalf(imageStream)
+    }
+
+    private fun splitInHalf(imageStream: InputStream): InputStream {
+        var side = when {
+            viewer is L2RPagerViewer && page is InsertPage -> ImageUtil.Side.RIGHT
+            viewer !is L2RPagerViewer && page is InsertPage -> ImageUtil.Side.LEFT
+            viewer is L2RPagerViewer && page !is InsertPage -> ImageUtil.Side.LEFT
+            viewer !is L2RPagerViewer && page !is InsertPage -> ImageUtil.Side.RIGHT
+            else -> error("We should choose a side!")
+        }
+
+        if (viewer.config.dualPageInvert) {
+            side = when (side) {
+                ImageUtil.Side.RIGHT -> ImageUtil.Side.LEFT
+                ImageUtil.Side.LEFT -> ImageUtil.Side.RIGHT
+            }
+        }
+
+        return ImageUtil.splitInHalf(imageStream, side)
+    }
+
+    private fun onPageSplit(page: ReaderPage) {
+        val newPage = InsertPage(page)
+        viewer.onPageSplit(page, newPage)
     }
 
     /**
@@ -307,20 +351,22 @@ class PagerPageHolder(
             setMinimumDpi(90)
             setMinimumTileDpi(180)
             setCropBorders(config.imageCropBorders)
-            setOnImageEventListener(object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
-                override fun onReady() {
-                    when (config.imageZoomType) {
-                        ZoomType.Left -> setScaleAndCenter(scale, PointF(0f, 0f))
-                        ZoomType.Right -> setScaleAndCenter(scale, PointF(sWidth.toFloat(), 0f))
-                        ZoomType.Center -> setScaleAndCenter(scale, center.also { it?.y = 0f })
+            setOnImageEventListener(
+                object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                    override fun onReady() {
+                        when (config.imageZoomType) {
+                            ZoomType.Left -> setScaleAndCenter(scale, PointF(0f, 0f))
+                            ZoomType.Right -> setScaleAndCenter(scale, PointF(sWidth.toFloat(), 0f))
+                            ZoomType.Center -> setScaleAndCenter(scale, center.also { it?.y = 0f })
+                        }
+                        onImageDecoded()
                     }
-                    onImageDecoded()
-                }
 
-                override fun onImageLoadError(e: Exception) {
-                    onImageDecodeError()
+                    override fun onImageLoadError(e: Exception) {
+                        onImageDecodeError()
+                    }
                 }
-            })
+            )
         }
         addView(subsamplingImageView)
         return subsamplingImageView!!
@@ -338,16 +384,18 @@ class PagerPageHolder(
             setZoomTransitionDuration(viewer.config.doubleTapAnimDuration)
             setScaleLevels(1f, 2f, 3f)
             // Force 2 scale levels on double tap
-            setOnDoubleTapListener(object : GestureDetector.SimpleOnGestureListener() {
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    if (scale > 1f) {
-                        setScale(1f, e.x, e.y, true)
-                    } else {
-                        setScale(2f, e.x, e.y, true)
+            setOnDoubleTapListener(
+                object : GestureDetector.SimpleOnGestureListener() {
+                    override fun onDoubleTap(e: MotionEvent): Boolean {
+                        if (scale > 1f) {
+                            setScale(1f, e.x, e.y, true)
+                        } else {
+                            setScale(2f, e.x, e.y, true)
+                        }
+                        return true
                     }
-                    return true
                 }
-            })
+            )
         }
         addView(imageView)
         return imageView!!
@@ -432,36 +480,24 @@ class PagerPageHolder(
      * Extension method to set a [stream] into this ImageView.
      */
     private fun ImageView.setImage(stream: InputStream) {
-        GlideApp.with(this)
-            .load(stream)
-            .skipMemoryCache(true)
-            .diskCacheStrategy(DiskCacheStrategy.NONE)
-            .transition(DrawableTransitionOptions.with(NoTransition.getFactory()))
-            .listener(object : RequestListener<Drawable> {
-                override fun onLoadFailed(
-                    e: GlideException?,
-                    model: Any?,
-                    target: Target<Drawable>?,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    onImageDecodeError()
-                    return false
-                }
-
-                override fun onResourceReady(
-                    resource: Drawable?,
-                    model: Any?,
-                    target: Target<Drawable>?,
-                    dataSource: DataSource?,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    if (resource is GifDrawable) {
-                        resource.setLoopCount(GifDrawable.LOOP_INTRINSIC)
+        val request = ImageRequest.Builder(context)
+            .data(ByteBuffer.wrap(stream.readBytes()))
+            .memoryCachePolicy(CachePolicy.DISABLED)
+            .diskCachePolicy(CachePolicy.DISABLED)
+            .target(
+                onSuccess = { result ->
+                    if (result is Animatable) {
+                        result.start()
                     }
+                    setImageDrawable(result)
                     onImageDecoded()
-                    return false
+                },
+                onError = {
+                    onImageDecodeError()
                 }
-            })
-            .into(this)
+            )
+            .crossfade(false)
+            .build()
+        context.imageLoader.enqueue(request)
     }
 }

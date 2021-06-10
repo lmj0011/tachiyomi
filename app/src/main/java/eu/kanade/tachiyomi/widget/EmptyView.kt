@@ -1,24 +1,26 @@
 package eu.kanade.tachiyomi.widget
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.util.AttributeSet
+import android.view.LayoutInflater
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.appcompat.widget.AppCompatButton
+import androidx.appcompat.view.ContextThemeWrapper
 import androidx.core.view.isVisible
+import com.google.android.material.button.MaterialButton
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.databinding.CommonViewEmptyBinding
 import kotlin.random.Random
-import kotlinx.android.synthetic.main.common_view_empty.view.actions_container
-import kotlinx.android.synthetic.main.common_view_empty.view.text_face
-import kotlinx.android.synthetic.main.common_view_empty.view.text_label
 
 class EmptyView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
     RelativeLayout(context, attrs) {
 
-    init {
-        inflate(context, R.layout.common_view_empty, this)
-    }
+    private val binding: CommonViewEmptyBinding =
+        CommonViewEmptyBinding.inflate(LayoutInflater.from(context), this, true)
 
     /**
      * Hide the information view
@@ -36,24 +38,29 @@ class EmptyView @JvmOverloads constructor(context: Context, attrs: AttributeSet?
     }
 
     fun show(message: String, actions: List<Action>? = null) {
-        text_face.text = getRandomErrorFace()
-        text_label.text = message
+        binding.textFace.text = getRandomErrorFace()
+        binding.textLabel.text = message
 
-        actions_container.removeAllViews()
-        if (!actions.isNullOrEmpty()) {
-            actions.forEach {
-                val button = AppCompatButton(context).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
+        binding.actionsContainer.removeAllViews()
+        actions?.forEach {
+            val button = MaterialButton(ContextThemeWrapper(context, R.style.Theme_Widget_Button_Action)).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f / actions.size
+                )
 
-                    setText(it.resId)
-                    setOnClickListener(it.listener)
-                }
+                backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+                stateListAnimator = null
+                elevation = 0f
 
-                actions_container.addView(button)
+                setIconResource(it.iconResId)
+                setText(it.stringResId)
+
+                setOnClickListener(it.listener)
             }
+
+            binding.actionsContainer.addView(button)
         }
 
         this.isVisible = true
@@ -75,7 +82,8 @@ class EmptyView @JvmOverloads constructor(context: Context, attrs: AttributeSet?
     }
 
     data class Action(
-        @StringRes val resId: Int,
+        @StringRes val stringResId: Int,
+        @DrawableRes val iconResId: Int,
         val listener: OnClickListener
     )
 }

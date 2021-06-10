@@ -8,8 +8,9 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.CustomRobolectricGradleTestRunner
-import eu.kanade.tachiyomi.data.backup.models.Backup
-import eu.kanade.tachiyomi.data.backup.models.DHistory
+import eu.kanade.tachiyomi.data.backup.legacy.LegacyBackupManager
+import eu.kanade.tachiyomi.data.backup.legacy.models.Backup
+import eu.kanade.tachiyomi.data.backup.legacy.models.DHistory
 import eu.kanade.tachiyomi.data.database.DatabaseHelper
 import eu.kanade.tachiyomi.data.database.models.Category
 import eu.kanade.tachiyomi.data.database.models.Chapter
@@ -19,6 +20,9 @@ import eu.kanade.tachiyomi.data.database.models.MangaImpl
 import eu.kanade.tachiyomi.data.database.models.TrackImpl
 import eu.kanade.tachiyomi.source.SourceManager
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.reader.setting.OrientationType
+import eu.kanade.tachiyomi.ui.reader.setting.ReadingModeType
+import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
 import org.junit.Test
@@ -30,17 +34,16 @@ import org.mockito.Mockito.mock
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import rx.Observable
-import rx.observers.TestSubscriber
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.InjektModule
 import uy.kohesive.injekt.api.InjektRegistrar
 import uy.kohesive.injekt.api.addSingleton
 
 /**
- * Test class for the [BackupManager].
+ * Test class for the [LegacyBackupManager].
  * Note that this does not include the backup create/restore services.
  */
-@Config(constants = BuildConfig::class, sdk = [Build.VERSION_CODES.LOLLIPOP])
+@Config(constants = BuildConfig::class, sdk = [Build.VERSION_CODES.M])
 @RunWith(CustomRobolectricGradleTestRunner::class)
 class BackupTest {
     // Create root object
@@ -59,7 +62,7 @@ class BackupTest {
     lateinit var context: Context
     lateinit var source: HttpSource
 
-    lateinit var backupManager: BackupManager
+    lateinit var legacyBackupManager: LegacyBackupManager
 
     lateinit var db: DatabaseHelper
 
@@ -67,8 +70,8 @@ class BackupTest {
     fun setup() {
         app = RuntimeEnvironment.application
         context = app.applicationContext
-        backupManager = BackupManager(context)
-        db = backupManager.databaseHelper
+        legacyBackupManager = LegacyBackupManager(context, 2)
+        db = legacyBackupManager.databaseHelper
 
         // Mock the source manager
         val module = object : InjektModule {
@@ -79,10 +82,12 @@ class BackupTest {
         Injekt.importModule(module)
 
         source = mock(HttpSource::class.java)
-        `when`(backupManager.sourceManager.get(anyLong())).thenReturn(source)
+        `when`(legacyBackupManager.sourceManager.get(anyLong())).thenReturn(source)
 
         root.add(Backup.MANGAS, mangaEntries)
         root.add(Backup.CATEGORIES, categoryEntries)
+
+        clearJson()
     }
 
     /**
@@ -90,14 +95,11 @@ class BackupTest {
      */
     @Test
     fun testRestoreEmptyCategory() {
-        // Initialize json with version 2
-        initializeJsonTest(2)
-
         // Create backup of empty database
-        backupManager.backupCategories(categoryEntries)
+        legacyBackupManager.backupCategories(categoryEntries)
 
         // Restore Json
-        backupManager.restoreCategories(categoryEntries)
+        legacyBackupManager.restoreCategories(categoryEntries)
 
         // Check if empty
         val dbCats = db.getCategories().executeAsBlocking()
@@ -109,17 +111,14 @@ class BackupTest {
      */
     @Test
     fun testRestoreSingleCategory() {
-        // Initialize json with version 2
-        initializeJsonTest(2)
-
         // Create category and add to json
         val category = addSingleCategory("category")
 
         // Restore Json
-        backupManager.restoreCategories(categoryEntries)
+        legacyBackupManager.restoreCategories(categoryEntries)
 
         // Check if successful
-        val dbCats = backupManager.databaseHelper.getCategories().executeAsBlocking()
+        val dbCats = legacyBackupManager.databaseHelper.getCategories().executeAsBlocking()
         assertThat(dbCats).hasSize(1)
         assertThat(dbCats[0].name).isEqualTo(category.name)
     }
@@ -129,9 +128,6 @@ class BackupTest {
      */
     @Test
     fun testRestoreMultipleCategories() {
-        // Initialize json with version 2
-        initializeJsonTest(2)
-
         // Create category and add to json
         val category = addSingleCategory("category")
         val category2 = addSingleCategory("category2")
@@ -143,10 +139,10 @@ class BackupTest {
         db.insertCategory(category).executeAsBlocking()
 
         // Restore Json
-        backupManager.restoreCategories(categoryEntries)
+        legacyBackupManager.restoreCategories(categoryEntries)
 
         // Check if successful
-        val dbCats = backupManager.databaseHelper.getCategories().executeAsBlocking()
+        val dbCats = legacyBackupManager.databaseHelper.getCategories().executeAsBlocking()
         assertThat(dbCats).hasSize(5)
         assertThat(dbCats[0].name).isEqualTo(category.name)
         assertThat(dbCats[1].name).isEqualTo(category2.name)
@@ -160,67 +156,67 @@ class BackupTest {
      */
     @Test
     fun testRestoreManga() {
-        // Initialize json with version 2
-        initializeJsonTest(2)
-
         // Add manga to database
         val manga = getSingleManga("One Piece")
-        manga.viewer = 3
+        manga.readingModeType = ReadingModeType.VERTICAL.flagValue
+        manga.orientationType = OrientationType.PORTRAIT.flagValue
         manga.id = db.insertManga(manga).executeAsBlocking().insertedId()
 
-        var favoriteManga = backupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
+        var favoriteManga = legacyBackupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
         assertThat(favoriteManga).hasSize(1)
-        assertThat(favoriteManga[0].viewer).isEqualTo(3)
+        assertThat(favoriteManga[0].readingModeType).isEqualTo(ReadingModeType.VERTICAL.flagValue)
+        assertThat(favoriteManga[0].orientationType).isEqualTo(OrientationType.PORTRAIT.flagValue)
 
         // Update json with all options enabled
-        mangaEntries.add(backupManager.backupMangaObject(manga, 1))
+        mangaEntries.add(legacyBackupManager.backupMangaObject(manga, 1))
 
         // Change manga in database to default values
         val dbManga = getSingleManga("One Piece")
         dbManga.id = manga.id
         db.insertManga(dbManga).executeAsBlocking()
 
-        favoriteManga = backupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
+        favoriteManga = legacyBackupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
         assertThat(favoriteManga).hasSize(1)
-        assertThat(favoriteManga[0].viewer).isEqualTo(0)
+        assertThat(favoriteManga[0].readingModeType).isEqualTo(ReadingModeType.DEFAULT.flagValue)
+        assertThat(favoriteManga[0].orientationType).isEqualTo(OrientationType.DEFAULT.flagValue)
 
         // Restore local manga
-        backupManager.restoreMangaNoFetch(manga, dbManga)
+        legacyBackupManager.restoreMangaNoFetch(manga, dbManga)
 
         // Test if restore successful
-        favoriteManga = backupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
+        favoriteManga = legacyBackupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
         assertThat(favoriteManga).hasSize(1)
-        assertThat(favoriteManga[0].viewer).isEqualTo(3)
+        assertThat(favoriteManga[0].readingModeType).isEqualTo(ReadingModeType.VERTICAL.flagValue)
+        assertThat(favoriteManga[0].orientationType).isEqualTo(OrientationType.PORTRAIT.flagValue)
 
         // Clear database to test manga fetch
         clearDatabase()
 
         // Test if successful
-        favoriteManga = backupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
+        favoriteManga = legacyBackupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
         assertThat(favoriteManga).hasSize(0)
 
         // Restore Json
         // Create JSON from manga to test parser
-        val json = backupManager.parser.toJsonTree(manga)
+        val json = legacyBackupManager.parser.toJsonTree(manga)
         // Restore JSON from manga to test parser
-        val jsonManga = backupManager.parser.fromJson<MangaImpl>(json)
+        val jsonManga = legacyBackupManager.parser.fromJson<MangaImpl>(json)
 
         // Restore manga with fetch observable
         val networkManga = getSingleManga("One Piece")
         networkManga.description = "This is a description"
         `when`(source.fetchMangaDetails(jsonManga)).thenReturn(Observable.just(networkManga))
 
-        val obs = backupManager.restoreMangaFetchObservable(source, jsonManga)
-        val testSubscriber = TestSubscriber<Manga>()
-        obs.subscribe(testSubscriber)
+        runBlocking {
+            legacyBackupManager.fetchManga(source, jsonManga)
 
-        testSubscriber.assertNoErrors()
-
-        // Check if restore successful
-        val dbCats = backupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
-        assertThat(dbCats).hasSize(1)
-        assertThat(dbCats[0].viewer).isEqualTo(3)
-        assertThat(dbCats[0].description).isEqualTo("This is a description")
+            // Check if restore successful
+            val dbCats = legacyBackupManager.databaseHelper.getFavoriteMangas().executeAsBlocking()
+            assertThat(dbCats).hasSize(1)
+            assertThat(dbCats[0].readingModeType).isEqualTo(ReadingModeType.VERTICAL.flagValue)
+            assertThat(dbCats[0].orientationType).isEqualTo(OrientationType.PORTRAIT.flagValue)
+            assertThat(dbCats[0].description).isEqualTo("This is a description")
+        }
     }
 
     /**
@@ -228,12 +224,9 @@ class BackupTest {
      */
     @Test
     fun testRestoreChapters() {
-        // Initialize json with version 2
-        initializeJsonTest(2)
-
         // Insert manga
         val manga = getSingleManga("One Piece")
-        manga.id = backupManager.databaseHelper.insertManga(manga).executeAsBlocking().insertedId()
+        manga.id = legacyBackupManager.databaseHelper.insertManga(manga).executeAsBlocking().insertedId()
 
         // Create restore list
         val chapters = mutableListOf<Chapter>()
@@ -244,8 +237,8 @@ class BackupTest {
         }
 
         // Check parser
-        val chaptersJson = backupManager.parser.toJsonTree(chapters)
-        val restoredChapters = backupManager.parser.fromJson<List<ChapterImpl>>(chaptersJson)
+        val chaptersJson = legacyBackupManager.parser.toJsonTree(chapters)
+        val restoredChapters = legacyBackupManager.parser.fromJson<List<ChapterImpl>>(chaptersJson)
 
         // Fetch chapters from upstream
         // Create list
@@ -253,16 +246,13 @@ class BackupTest {
         (1..10).mapTo(chaptersRemote) { getSingleChapter("Chapter $it") }
         `when`(source.fetchChapterList(manga)).thenReturn(Observable.just(chaptersRemote))
 
-        // Call restoreChapterFetchObservable
-        val obs = backupManager.restoreChapterFetchObservable(source, manga, restoredChapters)
-        val testSubscriber = TestSubscriber<Pair<List<Chapter>, List<Chapter>>>()
-        obs.subscribe(testSubscriber)
+        runBlocking {
+            legacyBackupManager.restoreChapters(source, manga, restoredChapters)
 
-        testSubscriber.assertNoErrors()
-
-        val dbCats = backupManager.databaseHelper.getChapters(manga).executeAsBlocking()
-        assertThat(dbCats).hasSize(10)
-        assertThat(dbCats[0].read).isEqualTo(true)
+            val dbCats = legacyBackupManager.databaseHelper.getChapters(manga).executeAsBlocking()
+            assertThat(dbCats).hasSize(10)
+            assertThat(dbCats[0].read).isEqualTo(true)
+        }
     }
 
     /**
@@ -270,17 +260,14 @@ class BackupTest {
      */
     @Test
     fun restoreHistoryForManga() {
-        // Initialize json with version 2
-        initializeJsonTest(2)
-
         val manga = getSingleManga("One Piece")
-        manga.id = backupManager.databaseHelper.insertManga(manga).executeAsBlocking().insertedId()
+        manga.id = legacyBackupManager.databaseHelper.insertManga(manga).executeAsBlocking().insertedId()
 
         // Create chapter
         val chapter = getSingleChapter("Chapter 1")
         chapter.manga_id = manga.id
         chapter.read = true
-        chapter.id = backupManager.databaseHelper.insertChapter(chapter).executeAsBlocking().insertedId()
+        chapter.id = legacyBackupManager.databaseHelper.insertChapter(chapter).executeAsBlocking().insertedId()
 
         val historyJson = getSingleHistory(chapter)
 
@@ -288,13 +275,13 @@ class BackupTest {
         historyList.add(historyJson)
 
         // Check parser
-        val historyListJson = backupManager.parser.toJsonTree(historyList)
-        val history = backupManager.parser.fromJson<List<DHistory>>(historyListJson)
+        val historyListJson = legacyBackupManager.parser.toJsonTree(historyList)
+        val history = legacyBackupManager.parser.fromJson<List<DHistory>>(historyListJson)
 
         // Restore categories
-        backupManager.restoreHistoryForManga(history)
+        legacyBackupManager.restoreHistoryForManga(history)
 
-        val historyDB = backupManager.databaseHelper.getHistoryByMangaId(manga.id!!).executeAsBlocking()
+        val historyDB = legacyBackupManager.databaseHelper.getHistoryByMangaId(manga.id!!).executeAsBlocking()
         assertThat(historyDB).hasSize(1)
         assertThat(historyDB[0].last_read).isEqualTo(1000)
     }
@@ -304,21 +291,18 @@ class BackupTest {
      */
     @Test
     fun restoreTrackForManga() {
-        // Initialize json with version 2
-        initializeJsonTest(2)
-
         // Create mangas
         val manga = getSingleManga("One Piece")
         val manga2 = getSingleManga("Bleach")
-        manga.id = backupManager.databaseHelper.insertManga(manga).executeAsBlocking().insertedId()
-        manga2.id = backupManager.databaseHelper.insertManga(manga2).executeAsBlocking().insertedId()
+        manga.id = legacyBackupManager.databaseHelper.insertManga(manga).executeAsBlocking().insertedId()
+        manga2.id = legacyBackupManager.databaseHelper.insertManga(manga2).executeAsBlocking().insertedId()
 
         // Create track and add it to database
         // This tests duplicate errors.
         val track = getSingleTrack(manga)
         track.last_chapter_read = 5
-        backupManager.databaseHelper.insertTrack(track).executeAsBlocking()
-        var trackDB = backupManager.databaseHelper.getTracks(manga).executeAsBlocking()
+        legacyBackupManager.databaseHelper.insertTrack(track).executeAsBlocking()
+        var trackDB = legacyBackupManager.databaseHelper.getTracks(manga).executeAsBlocking()
         assertThat(trackDB).hasSize(1)
         assertThat(trackDB[0].last_chapter_read).isEqualTo(5)
         track.last_chapter_read = 7
@@ -330,22 +314,22 @@ class BackupTest {
         // Check parser and restore already in database
         var trackList = listOf(track)
         // Check parser
-        var trackListJson = backupManager.parser.toJsonTree(trackList)
-        var trackListRestore = backupManager.parser.fromJson<List<TrackImpl>>(trackListJson)
-        backupManager.restoreTrackForManga(manga, trackListRestore)
+        var trackListJson = legacyBackupManager.parser.toJsonTree(trackList)
+        var trackListRestore = legacyBackupManager.parser.fromJson<List<TrackImpl>>(trackListJson)
+        legacyBackupManager.restoreTrackForManga(manga, trackListRestore)
 
         // Assert if restore works.
-        trackDB = backupManager.databaseHelper.getTracks(manga).executeAsBlocking()
+        trackDB = legacyBackupManager.databaseHelper.getTracks(manga).executeAsBlocking()
         assertThat(trackDB).hasSize(1)
         assertThat(trackDB[0].last_chapter_read).isEqualTo(7)
 
         // Check parser and restore already in database with lower chapter_read
         track.last_chapter_read = 5
         trackList = listOf(track)
-        backupManager.restoreTrackForManga(manga, trackList)
+        legacyBackupManager.restoreTrackForManga(manga, trackList)
 
         // Assert if restore works.
-        trackDB = backupManager.databaseHelper.getTracks(manga).executeAsBlocking()
+        trackDB = legacyBackupManager.databaseHelper.getTracks(manga).executeAsBlocking()
         assertThat(trackDB).hasSize(1)
         assertThat(trackDB[0].last_chapter_read).isEqualTo(7)
 
@@ -353,41 +337,36 @@ class BackupTest {
         trackList = listOf(track2)
 
         // Check parser
-        trackListJson = backupManager.parser.toJsonTree(trackList)
-        trackListRestore = backupManager.parser.fromJson<List<TrackImpl>>(trackListJson)
-        backupManager.restoreTrackForManga(manga2, trackListRestore)
+        trackListJson = legacyBackupManager.parser.toJsonTree(trackList)
+        trackListRestore = legacyBackupManager.parser.fromJson<List<TrackImpl>>(trackListJson)
+        legacyBackupManager.restoreTrackForManga(manga2, trackListRestore)
 
         // Assert if restore works.
-        trackDB = backupManager.databaseHelper.getTracks(manga2).executeAsBlocking()
+        trackDB = legacyBackupManager.databaseHelper.getTracks(manga2).executeAsBlocking()
         assertThat(trackDB).hasSize(1)
         assertThat(trackDB[0].last_chapter_read).isEqualTo(10)
     }
 
-    fun clearJson() {
+    private fun clearJson() {
         root = JsonObject()
         information = JsonObject()
         mangaEntries = JsonArray()
         categoryEntries = JsonArray()
     }
 
-    fun initializeJsonTest(version: Int) {
-        clearJson()
-        backupManager.setVersion(version)
-    }
-
-    fun addSingleCategory(name: String): Category {
+    private fun addSingleCategory(name: String): Category {
         val category = Category.create(name)
-        val catJson = backupManager.parser.toJsonTree(category)
+        val catJson = legacyBackupManager.parser.toJsonTree(category)
         categoryEntries.add(catJson)
         return category
     }
 
-    fun clearDatabase() {
+    private fun clearDatabase() {
         db.deleteMangas().executeAsBlocking()
         db.deleteHistory().executeAsBlocking()
     }
 
-    fun getSingleHistory(chapter: Chapter): DHistory {
+    private fun getSingleHistory(chapter: Chapter): DHistory {
         return DHistory(chapter.url, 1000)
     }
 

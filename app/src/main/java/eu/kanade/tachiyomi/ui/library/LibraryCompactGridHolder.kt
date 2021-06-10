@@ -2,18 +2,11 @@ package eu.kanade.tachiyomi.ui.library
 
 import android.view.View
 import androidx.core.view.isVisible
-import com.bumptech.glide.load.engine.DiskCacheStrategy
+import coil.clear
+import coil.loadAny
 import eu.davidea.flexibleadapter.FlexibleAdapter
-import eu.kanade.tachiyomi.data.glide.GlideApp
-import eu.kanade.tachiyomi.data.glide.toMangaThumbnail
+import eu.kanade.tachiyomi.databinding.SourceCompactGridItemBinding
 import eu.kanade.tachiyomi.util.isLocal
-import kotlinx.android.synthetic.main.source_compact_grid_item.badges
-import kotlinx.android.synthetic.main.source_compact_grid_item.card
-import kotlinx.android.synthetic.main.source_compact_grid_item.download_text
-import kotlinx.android.synthetic.main.source_compact_grid_item.local_text
-import kotlinx.android.synthetic.main.source_compact_grid_item.thumbnail
-import kotlinx.android.synthetic.main.source_compact_grid_item.title
-import kotlinx.android.synthetic.main.source_compact_grid_item.unread_text
 
 /**
  * Class used to hold the displayed data of a manga in the library, like the cover or the title.
@@ -27,7 +20,9 @@ import kotlinx.android.synthetic.main.source_compact_grid_item.unread_text
 open class LibraryCompactGridHolder(
     private val view: View,
     private val adapter: FlexibleAdapter<*>
-) : LibraryHolder(view, adapter) {
+) : LibraryHolder<SourceCompactGridItemBinding>(view, adapter) {
+
+    override val binding = SourceCompactGridItemBinding.bind(view)
 
     /**
      * Method called from [LibraryCategoryAdapter.onBindViewHolder]. It updates the data for this
@@ -37,34 +32,29 @@ open class LibraryCompactGridHolder(
      */
     override fun onSetValues(item: LibraryItem) {
         // Update the title of the manga.
-        title.text = item.manga.title
+        binding.title.text = item.manga.title
 
         // For rounded corners
-        badges.clipToOutline = true
+        binding.badges.clipToOutline = true
 
         // Update the unread count and its visibility.
-        with(unread_text) {
+        with(binding.unreadText) {
             isVisible = item.unreadCount > 0
             text = item.unreadCount.toString()
         }
         // Update the download count and its visibility.
-        with(download_text) {
+        with(binding.downloadText) {
             isVisible = item.downloadCount > 0
             text = item.downloadCount.toString()
         }
         // set local visibility if its local manga
-        local_text.isVisible = item.manga.isLocal()
+        binding.localText.isVisible = item.isLocal
 
         // For rounded corners
-        card.clipToOutline = true
+        binding.card.clipToOutline = true
 
         // Update the cover.
-        GlideApp.with(view.context).clear(thumbnail)
-        GlideApp.with(view.context)
-            .load(item.manga.toMangaThumbnail())
-            .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-            .centerCrop()
-            .dontAnimate()
-            .into(thumbnail)
+        binding.thumbnail.clear()
+        binding.thumbnail.loadAny(item.manga)
     }
 }

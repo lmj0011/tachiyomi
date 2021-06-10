@@ -1,16 +1,16 @@
 package eu.kanade.tachiyomi.ui.browse.source.browse
 
 import android.view.View
-import com.bumptech.glide.load.engine.DiskCacheStrategy
+import coil.clear
+import coil.imageLoader
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import coil.transition.CrossfadeTransition
 import eu.davidea.flexibleadapter.FlexibleAdapter
+import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher
 import eu.kanade.tachiyomi.data.database.models.Manga
-import eu.kanade.tachiyomi.data.glide.GlideApp
-import eu.kanade.tachiyomi.data.glide.toMangaThumbnail
+import eu.kanade.tachiyomi.databinding.SourceComfortableGridItemBinding
 import eu.kanade.tachiyomi.widget.StateImageViewTarget
-import kotlinx.android.synthetic.main.source_compact_grid_item.card
-import kotlinx.android.synthetic.main.source_compact_grid_item.progress
-import kotlinx.android.synthetic.main.source_compact_grid_item.thumbnail
-import kotlinx.android.synthetic.main.source_compact_grid_item.title
 
 /**
  * Class used to hold the displayed data of a manga in the catalogue, like the cover or the title.
@@ -21,7 +21,9 @@ import kotlinx.android.synthetic.main.source_compact_grid_item.title
  * @constructor creates a new catalogue holder.
  */
 open class SourceGridHolder(private val view: View, private val adapter: FlexibleAdapter<*>) :
-    SourceHolder(view, adapter) {
+    SourceHolder<SourceComfortableGridItemBinding>(view, adapter) {
+
+    override val binding = SourceComfortableGridItemBinding.bind(view)
 
     /**
      * Method called from [CatalogueAdapter.onBindViewHolder]. It updates the data for this
@@ -31,26 +33,30 @@ open class SourceGridHolder(private val view: View, private val adapter: Flexibl
      */
     override fun onSetValues(manga: Manga) {
         // Set manga title
-        title.text = manga.title
+        binding.title.text = manga.title
 
         // Set alpha of thumbnail.
-        thumbnail.alpha = if (manga.favorite) 0.3f else 1.0f
+        binding.thumbnail.alpha = if (manga.favorite) 0.3f else 1.0f
 
         setImage(manga)
     }
 
     override fun setImage(manga: Manga) {
         // For rounded corners
-        card.clipToOutline = true
+        binding.card.clipToOutline = true
 
-        GlideApp.with(view.context).clear(thumbnail)
+        binding.thumbnail.clear()
         if (!manga.thumbnail_url.isNullOrEmpty()) {
-            GlideApp.with(view.context)
-                .load(manga.toMangaThumbnail())
-                .diskCacheStrategy(DiskCacheStrategy.DATA)
-                .centerCrop()
-                .placeholder(android.R.color.transparent)
-                .into(StateImageViewTarget(thumbnail, progress))
+            val crossfadeDuration = view.context.imageLoader.defaults.transition.let {
+                if (it is CrossfadeTransition) it.durationMillis else 0
+            }
+            val request = ImageRequest.Builder(view.context)
+                .data(manga)
+                .setParameter(MangaCoverFetcher.USE_CUSTOM_COVER, false)
+                .diskCachePolicy(CachePolicy.DISABLED)
+                .target(StateImageViewTarget(binding.thumbnail, binding.progress, crossfadeDuration))
+                .build()
+            itemView.context.imageLoader.enqueue(request)
         }
     }
 }

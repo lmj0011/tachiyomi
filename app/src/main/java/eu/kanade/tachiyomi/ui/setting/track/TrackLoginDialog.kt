@@ -3,64 +3,57 @@ package eu.kanade.tachiyomi.ui.setting.track
 import android.os.Bundle
 import android.view.View
 import androidx.annotation.StringRes
+import androidx.core.os.bundleOf
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.track.TrackManager
 import eu.kanade.tachiyomi.data.track.TrackService
+import eu.kanade.tachiyomi.util.lang.launchIO
+import eu.kanade.tachiyomi.util.lang.withUIContext
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.widget.preference.LoginDialogPreference
-import kotlinx.android.synthetic.main.pref_account_login.view.login
-import kotlinx.android.synthetic.main.pref_account_login.view.password
-import kotlinx.android.synthetic.main.pref_account_login.view.username
-import rx.android.schedulers.AndroidSchedulers
-import rx.schedulers.Schedulers
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 class TrackLoginDialog(
-    @StringRes titleRes: Int? = null,
-    titleFormatArgs: Any? = null,
     @StringRes usernameLabelRes: Int? = null,
     bundle: Bundle? = null
-) : LoginDialogPreference(titleRes, titleFormatArgs, usernameLabelRes, bundle) {
+) : LoginDialogPreference(usernameLabelRes, bundle) {
 
-    private val service = Injekt.get<TrackManager>().getService(args.getInt("key"))!!
+    private val service = Injekt.get<TrackManager>().getService(args.getInt("serviceId"))!!
 
     constructor(service: TrackService) : this(service, null)
 
     constructor(service: TrackService, @StringRes usernameLabelRes: Int?) :
-        this(R.string.login_title, service.name, usernameLabelRes, Bundle().apply { putInt("key", service.id) })
+        this(usernameLabelRes, bundleOf("serviceId" to service.id))
 
-    override fun setCredentialsOnView(view: View) = with(view) {
-        username.setText(service.getUsername())
-        password.setText(service.getPassword())
+    @StringRes
+    override fun getTitleName(): Int = service.nameRes()
+
+    override fun setCredentialsOnView(view: View) {
+        binding?.username?.setText(service.getUsername())
+        binding?.password?.setText(service.getPassword())
     }
 
     override fun checkLogin() {
-        requestSubscription?.unsubscribe()
+        if (binding!!.username.text.isNullOrEmpty() || binding!!.password.text.isNullOrEmpty()) {
+            return
+        }
 
-        v?.apply {
-            if (username.text.isNullOrEmpty() || password.text.isNullOrEmpty()) {
-                return
+        binding!!.login.progress = 1
+        val user = binding!!.username.text.toString()
+        val pass = binding!!.password.text.toString()
+
+        launchIO {
+            try {
+                service.login(user, pass)
+                dialog?.dismiss()
+                withUIContext { view?.context?.toast(R.string.login_success) }
+            } catch (e: Throwable) {
+                service.logout()
+                binding?.login?.progress = -1
+                binding?.login?.setText(R.string.unknown_error)
+                withUIContext { e.message?.let { view?.context?.toast(it) } }
             }
-
-            login.progress = 1
-            val user = username.text.toString()
-            val pass = password.text.toString()
-
-            requestSubscription = service.login(user, pass)
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    {
-                        dialog?.dismiss()
-                        context.toast(R.string.login_success)
-                    },
-                    { error ->
-                        login.progress = -1
-                        login.setText(R.string.unknown_error)
-                        error.message?.let { context.toast(it) }
-                    }
-                )
         }
     }
 

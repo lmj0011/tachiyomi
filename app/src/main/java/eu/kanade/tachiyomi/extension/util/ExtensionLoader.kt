@@ -5,8 +5,7 @@ import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import dalvik.system.PathClassLoader
-import eu.kanade.tachiyomi.annoations.Nsfw
-import eu.kanade.tachiyomi.data.preference.PreferenceValues
+import eu.kanade.tachiyomi.annotations.Nsfw
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
 import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.extension.model.LoadResult
@@ -26,12 +25,13 @@ import uy.kohesive.injekt.injectLazy
 internal object ExtensionLoader {
 
     private val preferences: PreferencesHelper by injectLazy()
-    private val allowNsfwSource by lazy {
-        preferences.allowNsfwSource().get()
+    private val loadNsfwSource by lazy {
+        preferences.showNsfwSource().get()
     }
 
     private const val EXTENSION_FEATURE = "tachiyomi.extension"
     private const val METADATA_SOURCE_CLASS = "tachiyomi.extension.class"
+    private const val METADATA_SOURCE_FACTORY = "tachiyomi.extension.factory"
     private const val METADATA_NSFW = "tachiyomi.extension.nsfw"
     const val LIB_VERSION_MIN = 1.2
     const val LIB_VERSION_MAX = 1.2
@@ -40,6 +40,7 @@ internal object ExtensionLoader {
 
     // inorichi's key
     private const val officialSignature = "7ce04da7773d41b489f4693a366c36bcd0a11fc39b547168553c285bd7348e23"
+
     /**
      * List of the trusted signatures.
      */
@@ -132,7 +133,7 @@ internal object ExtensionLoader {
         }
 
         val isNsfw = appInfo.metaData.getInt(METADATA_NSFW) == 1
-        if (allowNsfwSource == PreferenceValues.NsfwAllowance.BLOCKED && isNsfw) {
+        if (!loadNsfwSource && isNsfw) {
             return LoadResult.Error("NSFW extension $pkgName not allowed")
         }
 
@@ -162,7 +163,7 @@ internal object ExtensionLoader {
                         else -> throw Exception("Unknown source class type! ${obj.javaClass}")
                     }
                 } catch (e: Throwable) {
-                    Timber.e(e, "Extension load error: $extName.")
+                    Timber.e(e, "Extension load error: $extName ($it)")
                     return LoadResult.Error(e)
                 }
             }
@@ -178,7 +179,14 @@ internal object ExtensionLoader {
         }
 
         val extension = Extension.Installed(
-            extName, pkgName, versionName, versionCode, lang, isNsfw, sources,
+            extName,
+            pkgName,
+            versionName,
+            versionCode,
+            lang,
+            isNsfw,
+            sources = sources,
+            pkgFactory = appInfo.metaData.getString(METADATA_SOURCE_FACTORY),
             isUnofficial = signatureHash != officialSignature
         )
         return LoadResult.Success(extension)
@@ -211,7 +219,7 @@ internal object ExtensionLoader {
      * Checks whether a Source or SourceFactory is annotated with @Nsfw.
      */
     private fun isSourceNsfw(clazz: Any): Boolean {
-        if (allowNsfwSource == PreferenceValues.NsfwAllowance.ALLOWED) {
+        if (loadNsfwSource) {
             return false
         }
 

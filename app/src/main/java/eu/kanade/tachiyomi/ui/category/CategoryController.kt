@@ -4,13 +4,13 @@ import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.view.ActionMode
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.snackbar.Snackbar
+import dev.chrisbanes.insetter.applyInsetter
 import eu.davidea.flexibleadapter.FlexibleAdapter
 import eu.davidea.flexibleadapter.SelectableAdapter
 import eu.davidea.flexibleadapter.helpers.UndoHelper
@@ -19,12 +19,9 @@ import eu.kanade.tachiyomi.data.database.models.Category
 import eu.kanade.tachiyomi.databinding.CategoriesControllerBinding
 import eu.kanade.tachiyomi.ui.base.controller.FabController
 import eu.kanade.tachiyomi.ui.base.controller.NucleusController
+import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.shrinkOnScroll
-import kotlinx.android.synthetic.main.main_activity.root_coordinator
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import reactivecircus.flowbinding.android.view.clicks
 
 /**
  * Controller to manage the categories for the users' library.
@@ -70,16 +67,7 @@ class CategoryController :
         return resources?.getString(R.string.action_edit_categories)
     }
 
-    /**
-     * Returns the view of this controller.
-     *
-     * @param inflater The layout inflater to create the view from XML.
-     * @param container The parent view for this one.
-     */
-    override fun inflateView(inflater: LayoutInflater, container: ViewGroup): View {
-        binding = CategoriesControllerBinding.inflate(inflater)
-        return binding.root
-    }
+    override fun createBinding(inflater: LayoutInflater) = CategoriesControllerBinding.inflate(inflater)
 
     /**
      * Called after view inflation. Used to initialize the view.
@@ -88,6 +76,12 @@ class CategoryController :
      */
     override fun onViewCreated(view: View) {
         super.onViewCreated(view)
+
+        binding.recycler.applyInsetter {
+            type(navigationBars = true) {
+                padding()
+            }
+        }
 
         adapter = CategoryAdapter(this@CategoryController)
         binding.recycler.layoutManager = LinearLayoutManager(view.context)
@@ -103,14 +97,13 @@ class CategoryController :
         actionFab = fab
         fab.setText(R.string.action_add)
         fab.setIconResource(R.drawable.ic_add_24dp)
-        fab.clicks()
-            .onEach {
-                CategoryCreateDialog(this@CategoryController).showDialog(router, null)
-            }
-            .launchIn(scope)
+        fab.setOnClickListener {
+            CategoryCreateDialog(this@CategoryController).showDialog(router, null)
+        }
     }
 
     override fun cleanupFab(fab: ExtendedFloatingActionButton) {
+        fab.setOnClickListener(null)
         actionFabScrollListener?.let { binding.recycler.removeOnScrollListener(it) }
         actionFab = null
     }
@@ -198,8 +191,11 @@ class CategoryController :
             R.id.action_delete -> {
                 undoHelper = UndoHelper(adapter, this)
                 undoHelper?.start(
-                    adapter.selectedPositions, activity!!.root_coordinator,
-                    R.string.snack_categories_deleted, R.string.action_undo, 3000
+                    adapter.selectedPositions,
+                    (activity as? MainActivity)?.binding?.rootCoordinator!!,
+                    R.string.snack_categories_deleted,
+                    R.string.action_undo,
+                    3000
                 )
 
                 mode.finish()

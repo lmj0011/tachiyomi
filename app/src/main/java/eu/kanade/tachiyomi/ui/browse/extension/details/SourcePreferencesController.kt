@@ -4,10 +4,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
 import android.util.TypedValue
-import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
+import androidx.appcompat.view.ContextThemeWrapper
+import androidx.core.os.bundleOf
 import androidx.preference.DialogPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.EditTextPreferenceDialogController
@@ -19,11 +19,8 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceGroupAdapter
 import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
-import androidx.recyclerview.widget.DividerItemDecoration
-import androidx.recyclerview.widget.DividerItemDecoration.VERTICAL
 import androidx.recyclerview.widget.LinearLayoutManager
 import eu.kanade.tachiyomi.R
-import eu.kanade.tachiyomi.data.preference.EmptyPreferenceDataStore
 import eu.kanade.tachiyomi.data.preference.SharedPreferencesDataStore
 import eu.kanade.tachiyomi.databinding.SourcePreferencesControllerBinding
 import eu.kanade.tachiyomi.source.ConfigurableSource
@@ -43,15 +40,12 @@ class SourcePreferencesController(bundle: Bundle? = null) :
     private var preferenceScreen: PreferenceScreen? = null
 
     constructor(sourceId: Long) : this(
-        Bundle().apply {
-            putLong(SOURCE_ID, sourceId)
-        }
+        bundleOf(SOURCE_ID to sourceId)
     )
 
-    override fun inflateView(inflater: LayoutInflater, container: ViewGroup): View {
+    override fun createBinding(inflater: LayoutInflater): SourcePreferencesControllerBinding {
         val themedInflater = inflater.cloneInContext(getPreferenceThemeContext())
-        binding = SourcePreferencesControllerBinding.inflate(themedInflater)
-        return binding.root
+        return SourcePreferencesControllerBinding.inflate(themedInflater)
     }
 
     override fun createPresenter(): SourcePreferencesPresenter {
@@ -71,7 +65,10 @@ class SourcePreferencesController(bundle: Bundle? = null) :
 
         val themedContext by lazy { getPreferenceThemeContext() }
         val manager = PreferenceManager(themedContext)
-        manager.preferenceDataStore = EmptyPreferenceDataStore()
+        val dataStore = SharedPreferencesDataStore(
+            context.getSharedPreferences(source.getPreferenceKey(), Context.MODE_PRIVATE)
+        )
+        manager.preferenceDataStore = dataStore
         manager.onDisplayPreferenceDialogListener = this
         val screen = manager.createPreferenceScreen(themedContext)
         preferenceScreen = screen
@@ -86,7 +83,6 @@ class SourcePreferencesController(bundle: Bundle? = null) :
 
         binding.recycler.layoutManager = LinearLayoutManager(context)
         binding.recycler.adapter = PreferenceGroupAdapter(screen)
-        binding.recycler.addItemDecoration(DividerItemDecoration(context, VERTICAL))
     }
 
     override fun onDestroyView(view: View) {
@@ -107,10 +103,6 @@ class SourcePreferencesController(bundle: Bundle? = null) :
     private fun addPreferencesForSource(screen: PreferenceScreen, source: Source) {
         val context = screen.context
 
-        val dataStore = SharedPreferencesDataStore(
-            context.getSharedPreferences(source.getPreferenceKey(), Context.MODE_PRIVATE)
-        )
-
         if (source is ConfigurableSource) {
             val newScreen = screen.preferenceManager.createPreferenceScreen(context)
             source.setupPreferenceScreen(newScreen)
@@ -119,7 +111,6 @@ class SourcePreferencesController(bundle: Bundle? = null) :
             while (newScreen.preferenceCount != 0) {
                 val pref = newScreen.getPreference(0)
                 pref.isIconSpaceReserved = false
-                pref.preferenceDataStore = dataStore
                 pref.order = Int.MAX_VALUE // reset to default order
 
                 newScreen.removePreference(pref)

@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.browse.source.globalsearch
 import android.os.Bundle
 import eu.kanade.tachiyomi.data.database.DatabaseHelper
 import eu.kanade.tachiyomi.data.database.models.Manga
+import eu.kanade.tachiyomi.data.database.models.toMangaInfo
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.CatalogueSource
@@ -11,8 +12,10 @@ import eu.kanade.tachiyomi.source.SourceManager
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.toSManga
 import eu.kanade.tachiyomi.ui.base.presenter.BasePresenter
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourcePresenter
+import eu.kanade.tachiyomi.util.lang.runAsObservable
 import rx.Observable
 import rx.Subscription
 import rx.android.schedulers.AndroidSchedulers
@@ -45,12 +48,6 @@ open class GlobalSearchPresenter(
     val sources by lazy { getSourcesToQuery() }
 
     /**
-     * Query from the view.
-     */
-    var query = ""
-        private set
-
-    /**
      * Fetches the different sources by user settings.
      */
     private var fetchSourcesSubscription: Subscription? = null
@@ -65,7 +62,7 @@ open class GlobalSearchPresenter(
      */
     private var fetchImageSubscription: Subscription? = null
 
-    private val extensionManager by injectLazy<ExtensionManager>()
+    private val extensionManager: ExtensionManager by injectLazy()
 
     private var extensionFilter: String? = null
 
@@ -108,7 +105,7 @@ open class GlobalSearchPresenter(
         return sourceManager.getCatalogueSources()
             .filter { it.lang in languages }
             .filterNot { it.id.toString() in disabledSourceIds }
-            .sortedWith(compareBy({ it.id.toString() !in pinnedSourceIds }, { "${it.name} (${it.lang})" }))
+            .sortedWith(compareBy({ it.id.toString() !in pinnedSourceIds }, { "${it.name.toLowerCase()} (${it.lang})" }))
     }
 
     private fun getSourcesToQuery(): List<CatalogueSource> {
@@ -170,9 +167,9 @@ open class GlobalSearchPresenter(
                     Observable.defer { source.fetchSearchManga(1, query, FilterList()) }
                         .subscribeOn(Schedulers.io())
                         .onErrorReturn { MangasPage(emptyList(), false) } // Ignore timeouts or other exceptions
-                        .map { it.mangas.take(10) } // Get at most 10 manga from search result.
-                        .map { list -> list.map { networkToLocalManga(it, source.id) } } // Convert to local manga.
-                        .doOnNext { fetchImage(it, source) } // Load manga covers.
+                        .map { it.mangas }
+                        .map { list -> list.map { networkToLocalManga(it, source.id) } } // Convert to local manga
+                        .doOnNext { fetchImage(it, source) } // Load manga covers
                         .map { list -> createCatalogueSearchItem(source, list.map { GlobalSearchCardItem(it) }) }
                 },
                 5
@@ -188,7 +185,7 @@ open class GlobalSearchPresenter(
                             { it.results.isNullOrEmpty() },
                             // Same as initial sort, i.e. pinned first then alphabetically
                             { it.source.id.toString() !in pinnedSourceIds },
-                            { "${it.source.name} (${it.source.lang})" }
+                            { "${it.source.name.toLowerCase()} (${it.source.lang})" }
                         )
                     )
             }
@@ -221,11 +218,11 @@ open class GlobalSearchPresenter(
     private fun initializeFetchImageSubscription() {
         fetchImageSubscription?.unsubscribe()
         fetchImageSubscription = fetchImageSubject.observeOn(Schedulers.io())
-            .flatMap { pair ->
-                val source = pair.second
-                Observable.from(pair.first).filter { it.thumbnail_url == null && !it.initialized }
+            .flatMap { (first, source) ->
+                Observable.from(first)
+                    .filter { it.thumbnail_url == null && !it.initialized }
                     .map { Pair(it, source) }
-                    .concatMap { getMangaDetailsObservable(it.first, it.second) }
+                    .concatMap { runAsObservable({ getMangaDetails(it.first, it.second) }) }
                     .map { Pair(source as CatalogueSource, it) }
             }
             .onBackpressureBuffer()
@@ -242,20 +239,17 @@ open class GlobalSearchPresenter(
     }
 
     /**
-     * Returns an observable of manga that initializes the given manga.
+     * Initializes the given manga.
      *
      * @param manga the manga to initialize.
-     * @return an observable of the manga to initialize
+     * @return The initialized manga.
      */
-    private fun getMangaDetailsObservable(manga: Manga, source: Source): Observable<Manga> {
-        return source.fetchMangaDetails(manga)
-            .flatMap { networkManga ->
-                manga.copyFrom(networkManga)
-                manga.initialized = true
-                db.insertManga(manga).executeAsBlocking()
-                Observable.just(manga)
-            }
-            .onErrorResumeNext { Observable.just(manga) }
+    private suspend fun getMangaDetails(manga: Manga, source: Source): Manga {
+        val networkManga = source.getMangaDetails(manga.toMangaInfo())
+        manga.copyFrom(networkManga.toSManga())
+        manga.initialized = true
+        db.insertManga(manga).executeAsBlocking()
+        return manga
     }
 
     /**

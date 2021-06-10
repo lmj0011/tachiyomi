@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import dev.chrisbanes.insetter.applyInsetter
 import eu.davidea.flexibleadapter.FlexibleAdapter
 import eu.davidea.flexibleadapter.SelectableAdapter
 import eu.kanade.tachiyomi.R
@@ -14,21 +15,20 @@ import eu.kanade.tachiyomi.data.database.models.Manga
 import eu.kanade.tachiyomi.data.library.LibraryUpdateService
 import eu.kanade.tachiyomi.data.preference.PreferenceValues.DisplayMode
 import eu.kanade.tachiyomi.data.preference.PreferencesHelper
+import eu.kanade.tachiyomi.databinding.LibraryCategoryBinding
 import eu.kanade.tachiyomi.util.lang.plusAssign
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.inflate
 import eu.kanade.tachiyomi.widget.AutofitRecyclerView
-import kotlinx.android.synthetic.main.library_category.view.fast_scroller
-import kotlinx.android.synthetic.main.library_category.view.swipe_refresh
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import reactivecircus.flowbinding.recyclerview.scrollStateChanges
 import reactivecircus.flowbinding.swiperefreshlayout.refreshes
 import rx.subscriptions.CompositeSubscription
 import uy.kohesive.injekt.injectLazy
+import java.util.ArrayDeque
 
 /**
  * Fragment containing the library manga for a certain category.
@@ -38,7 +38,7 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
     FlexibleAdapter.OnItemClickListener,
     FlexibleAdapter.OnItemLongClickListener {
 
-    private val scope = CoroutineScope(Job() + Dispatchers.Main)
+    private val scope = MainScope()
 
     private val preferences: PreferencesHelper by injectLazy()
 
@@ -68,18 +68,24 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
      */
     private var subscriptions = CompositeSubscription()
 
-    private var lastClickPosition = -1
+    private var lastClickPositionStack = ArrayDeque(listOf(-1))
 
-    fun onCreate(controller: LibraryController) {
+    fun onCreate(controller: LibraryController, binding: LibraryCategoryBinding) {
         this.controller = controller
 
         recycler = if (preferences.libraryDisplayMode().get() == DisplayMode.LIST) {
-            (swipe_refresh.inflate(R.layout.library_list_recycler) as RecyclerView).apply {
+            (binding.swipeRefresh.inflate(R.layout.library_list_recycler) as RecyclerView).apply {
                 layoutManager = LinearLayoutManager(context)
             }
         } else {
-            (swipe_refresh.inflate(R.layout.library_grid_recycler) as AutofitRecyclerView).apply {
+            (binding.swipeRefresh.inflate(R.layout.library_grid_recycler) as AutofitRecyclerView).apply {
                 spanCount = controller.mangaPerRow
+            }
+        }
+
+        recycler.applyInsetter {
+            type(navigationBars = true) {
+                padding()
             }
         }
 
@@ -87,28 +93,28 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
 
         recycler.setHasFixedSize(true)
         recycler.adapter = adapter
-        swipe_refresh.addView(recycler)
-        adapter.fastScroller = fast_scroller
+        binding.swipeRefresh.addView(recycler)
+        adapter.fastScroller = binding.fastScroller
 
         recycler.scrollStateChanges()
             .onEach {
                 // Disable swipe refresh when view is not at the top
                 val firstPos = (recycler.layoutManager as LinearLayoutManager)
                     .findFirstCompletelyVisibleItemPosition()
-                swipe_refresh.isEnabled = firstPos <= 0
+                binding.swipeRefresh.isEnabled = firstPos <= 0
             }
             .launchIn(scope)
 
         // Double the distance required to trigger sync
-        swipe_refresh.setDistanceToTriggerSync((2 * 64 * resources.displayMetrics.density).toInt())
-        swipe_refresh.refreshes()
+        binding.swipeRefresh.setDistanceToTriggerSync((2 * 64 * resources.displayMetrics.density).toInt())
+        binding.swipeRefresh.refreshes()
             .onEach {
                 if (LibraryUpdateService.start(context, category)) {
                     context.toast(R.string.updating_category)
                 }
 
                 // It can be a very long operation, so we disable swipe refresh and show a toast.
-                swipe_refresh.isRefreshing = false
+                binding.swipeRefresh.isRefreshing = false
             }
             .launchIn(scope)
     }
@@ -158,7 +164,12 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
         unsubscribe()
     }
 
-    fun unsubscribe() {
+    fun onDestroy() {
+        unsubscribe()
+        scope.cancel()
+    }
+
+    private fun unsubscribe() {
         subscriptions.clear()
     }
 
@@ -180,7 +191,7 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
                 val position = adapter.indexOf(manga)
                 if (position != -1 && !adapter.isSelected(position)) {
                     adapter.toggleSelection(position)
-                    (recycler.findViewHolderForItemId(manga.id!!) as? LibraryHolder)?.toggleActivation()
+                    (recycler.findViewHolderForItemId(manga.id!!) as? LibraryHolder<*>)?.toggleActivation()
                 }
             }
         }
@@ -202,7 +213,11 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
             }
             is LibrarySelectionEvent.Unselected -> {
                 findAndToggleSelection(event.manga)
-                if (adapter.indexOf(event.manga) != -1) lastClickPosition = -1
+
+                with(adapter.indexOf(event.manga)) {
+                    if (this != -1) lastClickPositionStack.remove(this)
+                }
+
                 if (controller.selectedMangas.isEmpty()) {
                     adapter.mode = SelectableAdapter.Mode.SINGLE
                 }
@@ -210,7 +225,9 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
             is LibrarySelectionEvent.Cleared -> {
                 adapter.mode = SelectableAdapter.Mode.SINGLE
                 adapter.clearSelection()
-                lastClickPosition = -1
+
+                lastClickPositionStack.clear()
+                lastClickPositionStack.push(-1)
             }
         }
     }
@@ -224,7 +241,7 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
         val position = adapter.indexOf(manga)
         if (position != -1) {
             adapter.toggleSelection(position)
-            (recycler.findViewHolderForItemId(manga.id!!) as? LibraryHolder)?.toggleActivation()
+            (recycler.findViewHolderForItemId(manga.id!!) as? LibraryHolder<*>)?.toggleActivation()
         }
     }
 
@@ -238,7 +255,11 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
         // If the action mode is created and the position is valid, toggle the selection.
         val item = adapter.getItem(position) ?: return false
         return if (adapter.mode == SelectableAdapter.Mode.MULTI) {
-            lastClickPosition = position
+            if (adapter.isSelected(position)) {
+                lastClickPositionStack.remove(position)
+            } else {
+                lastClickPositionStack.push(position)
+            }
             toggleSelection(position)
             true
         } else {
@@ -254,6 +275,7 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
      */
     override fun onItemLongClick(position: Int) {
         controller.createActionModeIfNeeded()
+        val lastClickPosition = lastClickPositionStack.peek()!!
         when {
             lastClickPosition == -1 -> setSelection(position)
             lastClickPosition > position ->
@@ -264,7 +286,10 @@ class LibraryCategoryView @JvmOverloads constructor(context: Context, attrs: Att
                     setSelection(i)
             else -> setSelection(position)
         }
-        lastClickPosition = position
+        if (lastClickPosition != position) {
+            lastClickPositionStack.remove(position)
+            lastClickPositionStack.push(position)
+        }
     }
 
     /**

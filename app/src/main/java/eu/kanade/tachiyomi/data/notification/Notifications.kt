@@ -62,6 +62,18 @@ object Notifications {
     const val ID_BACKUP_COMPLETE = -502
     const val ID_RESTORE_COMPLETE = -504
 
+    /**
+     * Notification channel used for crash log file sharing.
+     */
+    const val CHANNEL_CRASH_LOGS = "crash_logs_channel"
+    const val ID_CRASH_LOGS = -601
+
+    /**
+     * Notification channel used for Incognito Mode
+     */
+    const val CHANNEL_INCOGNITO_MODE = "incognito_mode_channel"
+    const val ID_INCOGNITO_MODE = -701
+
     private val deprecatedChannels = listOf(
         "downloader_channel",
         "backup_restore_complete_channel"
@@ -82,59 +94,78 @@ object Notifications {
 
         listOf(
             NotificationChannel(
-                CHANNEL_COMMON, context.getString(R.string.channel_common),
+                CHANNEL_COMMON,
+                context.getString(R.string.channel_common),
                 NotificationManager.IMPORTANCE_LOW
             ),
             NotificationChannel(
-                CHANNEL_LIBRARY, context.getString(R.string.channel_library),
+                CHANNEL_LIBRARY,
+                context.getString(R.string.channel_library),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 setShowBadge(false)
             },
             NotificationChannel(
-                CHANNEL_DOWNLOADER_PROGRESS, context.getString(R.string.channel_progress),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                group = GROUP_DOWNLOADER
-                setShowBadge(false)
-            },
-            NotificationChannel(
-                CHANNEL_DOWNLOADER_COMPLETE, context.getString(R.string.channel_complete),
+                CHANNEL_DOWNLOADER_PROGRESS,
+                context.getString(R.string.channel_progress),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 group = GROUP_DOWNLOADER
                 setShowBadge(false)
             },
             NotificationChannel(
-                CHANNEL_DOWNLOADER_ERROR, context.getString(R.string.channel_errors),
+                CHANNEL_DOWNLOADER_COMPLETE,
+                context.getString(R.string.channel_complete),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 group = GROUP_DOWNLOADER
                 setShowBadge(false)
             },
             NotificationChannel(
-                CHANNEL_NEW_CHAPTERS, context.getString(R.string.channel_new_chapters),
+                CHANNEL_DOWNLOADER_ERROR,
+                context.getString(R.string.channel_errors),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                group = GROUP_DOWNLOADER
+                setShowBadge(false)
+            },
+            NotificationChannel(
+                CHANNEL_NEW_CHAPTERS,
+                context.getString(R.string.channel_new_chapters),
                 NotificationManager.IMPORTANCE_DEFAULT
             ),
             NotificationChannel(
-                CHANNEL_UPDATES_TO_EXTS, context.getString(R.string.channel_ext_updates),
+                CHANNEL_UPDATES_TO_EXTS,
+                context.getString(R.string.channel_ext_updates),
                 NotificationManager.IMPORTANCE_DEFAULT
             ),
             NotificationChannel(
-                CHANNEL_BACKUP_RESTORE_PROGRESS, context.getString(R.string.channel_progress),
+                CHANNEL_BACKUP_RESTORE_PROGRESS,
+                context.getString(R.string.channel_progress),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 group = GROUP_BACKUP_RESTORE
                 setShowBadge(false)
             },
             NotificationChannel(
-                CHANNEL_BACKUP_RESTORE_COMPLETE, context.getString(R.string.channel_complete),
+                CHANNEL_BACKUP_RESTORE_COMPLETE,
+                context.getString(R.string.channel_complete),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 group = GROUP_BACKUP_RESTORE
                 setShowBadge(false)
                 setSound(null, null)
-            }
+            },
+            NotificationChannel(
+                CHANNEL_CRASH_LOGS,
+                context.getString(R.string.channel_crash_logs),
+                NotificationManager.IMPORTANCE_HIGH
+            ),
+            NotificationChannel(
+                CHANNEL_INCOGNITO_MODE,
+                context.getString(R.string.pref_incognito_mode),
+                NotificationManager.IMPORTANCE_LOW
+            )
         ).forEach(context.notificationManager::createNotificationChannel)
 
         // Delete old notification channels
