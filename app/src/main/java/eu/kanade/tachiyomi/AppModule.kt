@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi
 
 import android.app.Application
 import android.os.Handler
-import com.google.firebase.FirebaseApp
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.database.DatabaseHelper
@@ -57,8 +56,6 @@ class AppModule(val app: Application) : InjektModule {
             get<DatabaseHelper>()
 
             get<DownloadManager>()
-
-            FirebaseApp.initializeApp(app)
         }
     }
 }

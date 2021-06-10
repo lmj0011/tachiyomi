@@ -10,10 +10,10 @@ import android.view.ViewGroup
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.databinding.ReaderExtractPageTextSheetBinding
 import eu.kanade.tachiyomi.ui.main.DeepLinkActivity
 import eu.kanade.tachiyomi.ui.main.MainActivity.Companion.INTENT_SEARCH
 import eu.kanade.tachiyomi.ui.main.MainActivity.Companion.INTENT_SEARCH_QUERY
-import kotlinx.android.synthetic.main.reader_extract_page_text_sheet.*
 import timber.log.Timber
 import kotlin.math.max
 import kotlin.math.min
@@ -26,14 +26,15 @@ class ReaderExtractedTextSheet(
     private val text: String
 ) : BottomSheetDialog(activity) {
 
-    private val view = activity.layoutInflater.inflate(R.layout.reader_extract_page_text_sheet, null)
+    private val binding = ReaderExtractPageTextSheetBinding.inflate(activity.layoutInflater)
     private val searchTerms = mutableSetOf<String>()
 
     init {
-        setContentView(view)
-        extracted_page_text.text = text
+        setContentView(binding.root)
 
-        extracted_page_text.customSelectionActionModeCallback = object : android.view.ActionMode.Callback {
+        binding.extractedPageText.text = text
+
+        binding.extractedPageText.customSelectionActionModeCallback = object : android.view.ActionMode.Callback {
             val ADD_SEARCH_TERM = 999
 
             override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean {
@@ -60,17 +61,17 @@ class ReaderExtractedTextSheet(
                     ADD_SEARCH_TERM -> {
                         // ref: https://stackoverflow.com/questions/22832123/get-selected-text-from-textview
                         var min = 0
-                        var max: Int = extracted_page_text.text.length
+                        var max: Int = binding.extractedPageText.text.length
 
-                        if (extracted_page_text.isFocused) {
-                            val selStart: Int = extracted_page_text.selectionStart
-                            val selEnd: Int = extracted_page_text.selectionEnd
+                        if (binding.extractedPageText.isFocused) {
+                            val selStart: Int = binding.extractedPageText.selectionStart
+                            val selEnd: Int = binding.extractedPageText.selectionEnd
                             min = max(0, min(selStart, selEnd))
                             max = max(0, max(selStart, selEnd))
                         }
 
                         // Perform your definition lookup with the selected text
-                        val selectedText = extracted_page_text.text.subSequence(min, max).toString()
+                        val selectedText = binding.extractedPageText.text.subSequence(min, max).toString()
                         mode?.finish()
 
                         if (selectedText.isNotBlank()) {
@@ -86,7 +87,7 @@ class ReaderExtractedTextSheet(
             }
         }
 
-        extracted_search_button.setOnClickListener {
+        binding.extractedPageText.setOnClickListener {
             val searchQuery = searchTerms.joinToString(
                 separator = " ",
                 transform = { "\"$it\"" }
@@ -122,11 +123,11 @@ class ReaderExtractedTextSheet(
     private fun updateSearchButton() {
         when {
             searchTerms.size < 1 -> {
-                extracted_search_button.visibility = View.GONE
+                binding.extractedPageText.visibility = View.GONE
             }
             else -> {
-                extracted_search_button.text = activity.getString(R.string.extract_text_search_terms, searchTerms.size)
-                extracted_search_button.visibility = View.VISIBLE
+                binding.extractedPageText.text = activity.getString(R.string.extract_text_search_terms, searchTerms.size)
+                binding.extractedPageText.visibility = View.VISIBLE
             }
         }
     }

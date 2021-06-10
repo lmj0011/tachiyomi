@@ -97,11 +97,6 @@ interface MangaQueries : DbProvider {
         .withPutResolver(MangaFlagsPutResolver(MangaTable.COL_VIEWER, Manga::viewer_flags, true))
         .prepare()
 
-    fun updateFlags(mangas: List<Manga>) = db.put()
-        .objects(mangas)
-        .withPutResolver(MangaFlagsPutResolver(true))
-        .prepare()
-
     fun updateLastUpdated(manga: Manga) = db.put()
         .`object`(manga)
         .withPutResolver(MangaLastUpdatedPutResolver())

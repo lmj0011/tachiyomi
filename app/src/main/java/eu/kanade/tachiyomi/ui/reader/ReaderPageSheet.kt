@@ -4,15 +4,15 @@ import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import android.view.View
 import com.afollestad.materialdialogs.MaterialDialog
-import com.google.firebase.ml.vision.FirebaseVision
-import com.google.firebase.ml.vision.common.FirebaseVisionImage
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizerOptions
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.databinding.ReaderPageSheetBinding
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.widget.sheet.BaseBottomSheetDialog
-import kotlinx.android.synthetic.main.reader_page_sheet.*
 import timber.log.Timber
 
 /**
@@ -43,21 +43,19 @@ class ReaderPageSheet(
         try {
             val stream = page.stream!!
             val bmp = BitmapFactory.decodeStream(stream())
-            val image = FirebaseVisionImage.fromBitmap(bmp)
+            val image = InputImage.fromBitmap(bmp, 0)
 
-            val detector = FirebaseVision.getInstance().onDeviceTextRecognizer
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-            detector.processImage(image)
-                .addOnSuccessListener { result ->
-                    // Task completed successfully
-
+            recognizer.process(image)
+                .addOnSuccessListener { visionText ->
                     /**
                      * The recognized text we get from result.text comes out in a weird format
                      * so we're reformatting it here
                      * */
                     var resultText = ""
 
-                    for (block in result.textBlocks) {
+                    for (block in visionText.textBlocks) {
                         var blockText = ""
 
                         for (line in block.lines) { blockText += "${line.text} " }

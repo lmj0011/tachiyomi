@@ -252,8 +252,8 @@ dependencies {
     // Licenses
     implementation("com.mikepenz:aboutlibraries:${BuildPluginsVersion.ABOUTLIB_PLUGIN}")
 
-    // ML Kit
-    implementation("com.google.firebase:firebase-ml-vision:24.0.3")
+    // ML Kit (Text recognition)
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:16.2.0")
 
     // Tests
     testImplementation("junit:junit:4.13.2")
